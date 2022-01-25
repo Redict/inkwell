@@ -14,6 +14,7 @@ use llvm_sys::prelude::{LLVMModuleRef, LLVMValueRef};
 use llvm_sys::LLVMLinkage;
 #[llvm_versions(7.0..=latest)]
 use llvm_sys::LLVMModuleFlagBehavior;
+use llvm_sys::execution_engine::{LLVMMCJITCompilerOptions, LLVMMCJITMemoryManagerRef, LLVMCreateMCJITCompilerForModule, LLVMInitializeMCJITCompilerOptions};
 
 use std::cell::{Cell, RefCell, Ref};
 use std::ffi::CStr;
@@ -521,6 +522,64 @@ impl<'ctx> Module<'ctx> {
         let code = unsafe {
             // Takes ownership of module
             LLVMCreateJITCompilerForModule(execution_engine.as_mut_ptr(), self.module.get(), opt_level as u32, err_string.as_mut_ptr())
+        };
+
+        if code == 1 {
+            unsafe {
+                return Err(LLVMString::new(err_string.assume_init()));
+            }
+        }
+
+        let execution_engine = unsafe { execution_engine.assume_init() };
+        let execution_engine = unsafe { ExecutionEngine::new(Rc::new(execution_engine), true) };
+
+        *self.owned_by_ee.borrow_mut() = Some(execution_engine.clone());
+
+        Ok(execution_engine)
+    }
+
+    /// Creates a JIT `ExecutionEngine` from this `Module`, while allowing to customize MCJIT options.
+    ///
+    /// # Example
+    /// ```no_run
+    /// use inkwell::OptimizationLevel;
+    /// use inkwell::context::Context;
+    /// use inkwell::module::Module;
+    /// use inkwell::targets::{InitializationConfig, Target};
+    ///
+    /// Target::initialize_native(&InitializationConfig::default()).expect("Failed to initialize native target");
+    ///
+    /// let context = Context::create();
+    /// let module = context.create_module("my_module");
+    /// let execution_engine = module.create_jit_execution_engine_with_options(|opts| { opts.OptLevel = OptimizationLevel::Default as u32 }).unwrap();
+    ///
+    /// assert_eq!(*module.get_context(), context);
+    /// ```
+    pub fn create_jit_execution_engine_with_options<F: FnOnce(&mut LLVMMCJITCompilerOptions)>(&self, customize_options: F) -> Result<ExecutionEngine<'ctx>, LLVMString> {
+        Target::initialize_native(&InitializationConfig::default())
+            .map_err(|mut err_string| {
+                err_string.push('\0');
+
+                LLVMString::create_from_str(&err_string)
+            })?;
+
+        if self.owned_by_ee.borrow().is_some() {
+            let string = "This module is already owned by an ExecutionEngine.\0";
+            return Err(LLVMString::create_from_str(string));
+        }
+
+        let mut execution_engine = MaybeUninit::uninit();
+        let mut err_string = MaybeUninit::uninit();
+
+        let code = unsafe {
+            // Takes ownership of module
+            let mut options: LLVMMCJITCompilerOptions = std::mem::zeroed();
+            LLVMInitializeMCJITCompilerOptions(
+                &mut options,
+                std::mem::size_of::<LLVMMCJITCompilerOptions>()
+            );
+            customize_options(&mut options);
+            LLVMCreateMCJITCompilerForModule(execution_engine.as_mut_ptr(), self.module.get(), &mut options, std::mem::size_of::<LLVMMCJITCompilerOptions>(), err_string.as_mut_ptr())
         };
 
         if code == 1 {
