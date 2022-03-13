@@ -1,5 +1,5 @@
 use llvm_sys::analysis::{LLVMVerifierFailureAction, LLVMVerifyFunction, LLVMViewFunctionCFG, LLVMViewFunctionCFGOnly};
-use llvm_sys::core::{LLVMIsAFunction, LLVMIsConstant, LLVMGetLinkage, LLVMGetPreviousFunction, LLVMGetNextFunction, LLVMGetParam, LLVMCountParams, LLVMGetLastParam, LLVMCountBasicBlocks, LLVMGetFirstParam, LLVMGetNextParam, LLVMGetBasicBlocks, LLVMDeleteFunction, LLVMGetLastBasicBlock, LLVMGetFirstBasicBlock, LLVMGetIntrinsicID, LLVMGetFunctionCallConv, LLVMSetFunctionCallConv, LLVMGetGC, LLVMSetGC, LLVMSetLinkage, LLVMSetParamAlignment, LLVMGetParams};
+use llvm_sys::core::{LLVMIsAFunction, LLVMIsConstant, LLVMGetLinkage, LLVMGetPreviousFunction, LLVMGetNextFunction, LLVMGetParam, LLVMCountParams, LLVMGetLastParam, LLVMCountBasicBlocks, LLVMGetFirstParam, LLVMGetNextParam, LLVMGetBasicBlocks, LLVMDeleteFunction, LLVMGetLastBasicBlock, LLVMGetFirstBasicBlock, LLVMGetIntrinsicID, LLVMGetFunctionCallConv, LLVMSetFunctionCallConv, LLVMGetGC, LLVMSetGC, LLVMSetLinkage, LLVMSetParamAlignment, LLVMGetParams, LLVMGetMetadata, LLVMSetMetadata};
 #[llvm_versions(3.7..=latest)]
 use llvm_sys::core::{LLVMGetPersonalityFn, LLVMSetPersonalityFn};
 #[llvm_versions(3.9..=latest)]
@@ -22,7 +22,7 @@ use crate::module::Linkage;
 use crate::support::to_c_str;
 use crate::types::{AnyType, FunctionType, PointerType};
 use crate::values::traits::{AnyValue, AsValueRef};
-use crate::values::{BasicValueEnum, GlobalValue, Value};
+use crate::values::{BasicMetadataValueEnum, BasicValueEnum, GlobalValue, MetadataValue, Value};
 
 #[derive(PartialEq, Eq, Clone, Copy, Hash)]
 pub struct FunctionValue<'ctx> {
@@ -300,6 +300,23 @@ impl<'ctx> FunctionValue<'ctx> {
 
         unsafe {
             LLVMSetGC(self.as_value_ref(), c_string.as_ptr())
+        }
+    }
+
+    pub fn set_metadata(self, kind_id: u32, meta: MetadataValue<'ctx>) {
+        unsafe {
+            LLVMSetMetadata(self.as_value_ref(), kind_id, meta.as_value_ref())
+        }
+    }
+
+    pub fn get_metadata(self, kind_id: u32) -> Option<MetadataValue<'ctx>> {
+        unsafe {
+            let value_ref = LLVMGetMetadata(self.as_value_ref(), kind_id);
+            if value_ref.is_null() {
+                Option::None
+            } else {
+                Option::Some(MetadataValue::new(value_ref))
+            }
         }
     }
 
