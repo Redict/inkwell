@@ -1,5 +1,7 @@
 use libc::c_int;
 use llvm_sys::execution_engine::{LLVMGetExecutionEngineTargetData, LLVMExecutionEngineRef, LLVMRunFunction, LLVMRunFunctionAsMain, LLVMDisposeExecutionEngine, LLVMGetFunctionAddress, LLVMAddModule, LLVMFindFunction, LLVMLinkInMCJIT, LLVMLinkInInterpreter, LLVMRemoveModule, LLVMGenericValueRef, LLVMFreeMachineCodeForFunction, LLVMAddGlobalMapping, LLVMRunStaticConstructors, LLVMRunStaticDestructors};
+#[llvm_versions(11.0..=latest)]
+use llvm_sys::execution_engine::LLVMExecutionEngineGetErrMsg;
 
 use crate::context::Context;
 use crate::module::Module;
@@ -176,6 +178,18 @@ impl<'ctx> ExecutionEngine<'ctx> {
         unsafe {
             LLVMAddGlobalMapping(self.execution_engine_inner(), value.as_value_ref(), addr as *mut _)
         }
+    }
+
+    #[llvm_versions(11.0..=latest)]
+    pub fn get_error(&self) -> Option<LLVMString> {
+        let mut err_string = MaybeUninit::uninit();
+        unsafe {
+            let res = LLVMExecutionEngineGetErrMsg(self.execution_engine_inner(), err_string.as_mut_ptr());
+            if res != 0 {
+                return Option::Some(LLVMString::new(err_string.assume_init()))
+            }
+            return Option::None
+        };
     }
 
     /// Adds a module to an `ExecutionEngine`.
