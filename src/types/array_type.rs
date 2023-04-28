@@ -1,12 +1,15 @@
 use llvm_sys::core::{LLVMConstArray, LLVMGetArrayLength};
 use llvm_sys::prelude::{LLVMTypeRef, LLVMValueRef};
 
-use crate::AddressSpace;
 use crate::context::ContextRef;
-use crate::types::traits::AsTypeRef;
-use crate::types::{Type, BasicTypeEnum, PointerType, FunctionType};
-use crate::values::{AsValueRef, ArrayValue, IntValue};
+use crate::support::LLVMString;
 use crate::types::enums::BasicMetadataTypeEnum;
+use crate::types::traits::AsTypeRef;
+use crate::types::{BasicTypeEnum, FunctionType, PointerType, Type};
+use crate::values::{ArrayValue, AsValueRef, IntValue};
+use crate::AddressSpace;
+
+use std::fmt::{self, Display};
 
 /// An `ArrayType` is the type of contiguous constants or variables.
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
@@ -15,7 +18,11 @@ pub struct ArrayType<'ctx> {
 }
 
 impl<'ctx> ArrayType<'ctx> {
-    pub(crate) unsafe fn new(array_type: LLVMTypeRef) -> Self {
+    /// Create `ArrayType` from [`LLVMTypeRef`]
+    ///
+    /// # Safety
+    /// Undefined behavior, if referenced type isn't array type
+    pub unsafe fn new(array_type: LLVMTypeRef) -> Self {
         assert!(!array_type.is_null());
 
         ArrayType {
@@ -67,8 +74,21 @@ impl<'ctx> ArrayType<'ctx> {
     /// let context = Context::create();
     /// let i8_type = context.i8_type();
     /// let i8_array_type = i8_type.array_type(3);
-    /// let i8_array_ptr_type = i8_array_type.ptr_type(AddressSpace::Generic);
+    /// let i8_array_ptr_type = i8_array_type.ptr_type(AddressSpace::default());
     ///
+    /// #[cfg(any(
+    ///     feature = "llvm4-0",
+    ///     feature = "llvm5-0",
+    ///     feature = "llvm6-0",
+    ///     feature = "llvm7-0",
+    ///     feature = "llvm8-0",
+    ///     feature = "llvm9-0",
+    ///     feature = "llvm10-0",
+    ///     feature = "llvm11-0",
+    ///     feature = "llvm12-0",
+    ///     feature = "llvm13-0",
+    ///     feature = "llvm14-0"
+    /// ))]
     /// assert_eq!(i8_array_ptr_type.get_element_type().into_array_type(), i8_array_type);
     /// ```
     pub fn ptr_type(self, address_space: AddressSpace) -> PointerType<'ctx> {
@@ -86,7 +106,7 @@ impl<'ctx> ArrayType<'ctx> {
     /// let i8_type = context.i8_type();
     /// let i8_array_type = i8_type.array_type(3);
     ///
-    /// assert_eq!(*i8_array_type.get_context(), context);
+    /// assert_eq!(i8_array_type.get_context(), context);
     /// ```
     pub fn get_context(self) -> ContextRef<'ctx> {
         self.array_type.get_context()
@@ -142,11 +162,13 @@ impl<'ctx> ArrayType<'ctx> {
     /// assert!(f32_array_array.is_const());
     /// ```
     pub fn const_array(self, values: &[ArrayValue<'ctx>]) -> ArrayValue<'ctx> {
-        let mut values: Vec<LLVMValueRef> = values.iter()
-                                                  .map(|val| val.as_value_ref())
-                                                  .collect();
+        let mut values: Vec<LLVMValueRef> = values.iter().map(|val| val.as_value_ref()).collect();
         unsafe {
-            ArrayValue::new(LLVMConstArray(self.as_type_ref(), values.as_mut_ptr(), values.len() as u32))
+            ArrayValue::new(LLVMConstArray(
+                self.as_type_ref(),
+                values.as_mut_ptr(),
+                values.len() as u32,
+            ))
         }
     }
 
@@ -163,9 +185,7 @@ impl<'ctx> ArrayType<'ctx> {
     /// let i8_array_zero = i8_array_type.const_zero();
     /// ```
     pub fn const_zero(self) -> ArrayValue<'ctx> {
-        unsafe {
-            ArrayValue::new(self.array_type.const_zero())
-        }
+        unsafe { ArrayValue::new(self.array_type.const_zero()) }
     }
 
     /// Gets the length of this `ArrayType`.
@@ -182,16 +202,12 @@ impl<'ctx> ArrayType<'ctx> {
     /// assert_eq!(i8_array_type.len(), 3);
     /// ```
     pub fn len(self) -> u32 {
-        unsafe {
-            LLVMGetArrayLength(self.as_type_ref())
-        }
+        unsafe { LLVMGetArrayLength(self.as_type_ref()) }
     }
 
-    // See Type::print_to_stderr note on 5.0+ status
-    /// Prints the definition of an `ArrayType` to stderr. Not available in newer LLVM versions.
-    #[llvm_versions(3.7..=4.0)]
-    pub fn print_to_stderr(self) {
-        self.array_type.print_to_stderr()
+    /// Print the definition of an `ArrayType` to `LLVMString`
+    pub fn print_to_string(self) -> LLVMString {
+        self.array_type.print_to_string()
     }
 
     /// Creates an undefined instance of a `ArrayType`.
@@ -208,9 +224,7 @@ impl<'ctx> ArrayType<'ctx> {
     /// assert!(i8_array_undef.is_undef());
     /// ```
     pub fn get_undef(self) -> ArrayValue<'ctx> {
-        unsafe {
-            ArrayValue::new(self.array_type.get_undef())
-        }
+        unsafe { ArrayValue::new(self.array_type.get_undef()) }
     }
 
     // SubType: ArrayType<BT> -> BT?
@@ -230,11 +244,16 @@ impl<'ctx> ArrayType<'ctx> {
     pub fn get_element_type(self) -> BasicTypeEnum<'ctx> {
         self.array_type.get_element_type().to_basic_type_enum()
     }
-
 }
 
-impl AsTypeRef for ArrayType<'_> {
+unsafe impl AsTypeRef for ArrayType<'_> {
     fn as_type_ref(&self) -> LLVMTypeRef {
         self.array_type.ty
+    }
+}
+
+impl Display for ArrayType<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.print_to_string())
     }
 }

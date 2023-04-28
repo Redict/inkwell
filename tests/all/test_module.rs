@@ -1,14 +1,12 @@
-extern crate inkwell;
-
-use self::inkwell::OptimizationLevel;
-use self::inkwell::context::Context;
-use self::inkwell::memory_buffer::MemoryBuffer;
-use self::inkwell::module::Module;
-use self::inkwell::targets::{Target, TargetTriple};
-use self::inkwell::values::AnyValue;
+use inkwell::context::Context;
+use inkwell::memory_buffer::MemoryBuffer;
+use inkwell::module::Module;
+use inkwell::targets::{Target, TargetTriple};
+use inkwell::values::AnyValue;
+use inkwell::OptimizationLevel;
 
 use std::env::temp_dir;
-use std::fs::{File, remove_file};
+use std::fs::{remove_file, File};
 use std::io::Read;
 use std::path::Path;
 
@@ -74,21 +72,41 @@ fn test_get_function() {
     let context = Context::create();
     let module = context.create_module("my_module");
 
-    assert_eq!(*module.get_context(), context);
+    assert_eq!(module.get_context(), context);
     assert!(module.get_first_function().is_none());
     assert!(module.get_last_function().is_none());
-    assert!(module.get_function("some_fn").is_none());
+    assert!(module.get_function("function_1").is_none());
+
+    let functions: Vec<_> = module.get_functions().collect();
+    assert!(functions.is_empty());
 
     let void_type = context.void_type();
-    let some_fn_type = void_type.fn_type(&[], false);
-    let some_fn = module.add_function("some_fn", some_fn_type, None);
+    let function_1_type = void_type.fn_type(&[], false);
+    let function_1 = module.add_function("function_1", function_1_type, None);
+
     let first_fn = module.get_first_function().unwrap();
     let last_fn = module.get_last_function().unwrap();
-    let named_fn = module.get_function("some_fn").unwrap();
+    let named_fn = module.get_function("function_1").unwrap();
 
-    assert_eq!(first_fn, some_fn);
-    assert_eq!(last_fn, some_fn);
-    assert_eq!(named_fn, some_fn);
+    assert_eq!(first_fn, function_1);
+    assert_eq!(last_fn, function_1);
+    assert_eq!(named_fn, function_1);
+
+    let functions: Vec<_> = module.get_functions().collect();
+    assert_eq!(functions, vec![function_1]);
+
+    let void_type = context.void_type();
+    let function_2_type = void_type.fn_type(&[], false);
+    let function_2 = module.add_function("function_2", function_2_type, None);
+
+    let first_fn = module.get_first_function().unwrap();
+    let last_fn = module.get_last_function().unwrap();
+
+    assert_eq!(first_fn, function_1);
+    assert_eq!(last_fn, function_2);
+
+    let functions: Vec<_> = module.get_functions().collect();
+    assert_eq!(functions, vec![function_1, function_2]);
 }
 
 #[test]
@@ -117,7 +135,10 @@ fn test_write_and_load_memory_buffer() {
 
     let module2 = context.create_module_from_ir(memory_buffer).unwrap();
 
-    assert_eq!(module2.get_function("my_fn").unwrap().print_to_string(), function.print_to_string());
+    assert_eq!(
+        module2.get_function("my_fn").unwrap().print_to_string(),
+        function.print_to_string()
+    );
 
     let memory_buffer2 = module.write_bitcode_to_memory();
     let object_file = memory_buffer2.create_object_file();
@@ -150,7 +171,7 @@ fn test_get_struct_type() {
     let context = Context::create();
     let module = context.create_module("my_module");
 
-    assert_eq!(*module.get_context(), context);
+    assert_eq!(module.get_context(), context);
     assert!(module.get_struct_type("foo").is_none());
 
     let opaque = context.opaque_struct_type("foo");
@@ -164,7 +185,7 @@ fn test_get_struct_type_global_context() {
         Context::get_global(|context| {
             let module = context.create_module("my_module");
 
-            assert_eq!(*module.get_context(), *context);
+            assert_eq!(module.get_context(), *context);
             assert!(module.get_struct_type("foo").is_none());
 
             let opaque = context.opaque_struct_type("foo");
@@ -177,24 +198,24 @@ fn test_get_struct_type_global_context() {
 // TODO: test compile fail
 // #[test]
 // fn test_module_no_double_free() {
-    // let _module = {
-    //     let context = Context::create();
+// let _module = {
+//     let context = Context::create();
 
-    //     context.create_module("my_mod")
-    // };
+//     context.create_module("my_mod")
+// };
 // }
 
 // #[test]
 // fn test_owned_module_dropped_ee_and_context() {
-    // let _module = {
-    //     let context = Context::create();
-    //     let module = context.create_module("my_mod");
+// let _module = {
+//     let context = Context::create();
+//     let module = context.create_module("my_mod");
 
-    //     module.create_jit_execution_engine(OptimizationLevel::None).unwrap();
-    //     module
-    // };
+//     module.create_jit_execution_engine(OptimizationLevel::None).unwrap();
+//     module
+// };
 
-    // Context and EE will live on in the module until here
+// Context and EE will live on in the module until here
 // }
 
 #[test]
@@ -221,7 +242,7 @@ fn test_parse_from_buffer() {
     let module2_result = Module::parse_bitcode_from_buffer(&buffer, &context);
 
     assert!(module2_result.is_ok());
-    assert_eq!(*module2_result.unwrap().get_context(), context);
+    assert_eq!(module2_result.unwrap().get_context(), context);
 
     let module3_result = Module::parse_bitcode_from_buffer(&garbage_buffer, &context);
 
@@ -231,7 +252,7 @@ fn test_parse_from_buffer() {
     let module4_result = Module::parse_bitcode_from_buffer(&buffer2, &context);
 
     assert!(module4_result.is_ok());
-    assert_eq!(*module4_result.unwrap().get_context(), context);
+    assert_eq!(module4_result.unwrap().get_context(), context);
 }
 
 #[test]
@@ -268,7 +289,7 @@ fn test_parse_from_path() {
     let module3_result = Module::parse_bitcode_from_path(&temp_path, &context);
 
     assert!(module3_result.is_ok());
-    assert_eq!(*module3_result.unwrap().get_context(), context);
+    assert_eq!(module3_result.unwrap().get_context(), context);
 }
 
 #[test]
@@ -305,7 +326,10 @@ fn test_print_to_file() {
 
     let bad_path = Path::new("/tmp/some/silly/path/that/sure/doesn't/exist");
 
-    assert_eq!(module.print_to_file(bad_path).unwrap_err().to_str(), Ok("No such file or directory"));
+    assert_eq!(
+        module.print_to_file(bad_path).unwrap_err().to_str(),
+        Ok("No such file or directory")
+    );
 
     let mut temp_path = temp_dir();
 
@@ -321,24 +345,19 @@ fn test_get_set_target() {
     let module = context.create_module("mod");
     let triple = TargetTriple::create("x86_64-pc-linux-gnu");
 
-    #[cfg(not(any(feature = "llvm3-6", feature = "llvm3-7", feature = "llvm3-8")))]
     assert_eq!(module.get_name().to_str(), Ok("mod"));
     assert_eq!(module.get_triple(), TargetTriple::create(""));
 
-    #[cfg(not(any(feature = "llvm3-6", feature = "llvm3-7", feature = "llvm3-8", feature = "llvm3-9",
-                  feature = "llvm4-0", feature = "llvm5-0", feature = "llvm6-0")))]
+    #[cfg(not(any(feature = "llvm4-0", feature = "llvm5-0", feature = "llvm6-0")))]
     assert_eq!(module.get_source_file_name().to_str(), Ok("mod"));
 
-    #[cfg(not(any(feature = "llvm3-6", feature = "llvm3-7", feature = "llvm3-8")))]
     module.set_name("mod2");
     module.set_triple(&triple);
 
-    #[cfg(not(any(feature = "llvm3-6", feature = "llvm3-7", feature = "llvm3-8")))]
     assert_eq!(module.get_name().to_str(), Ok("mod2"));
     assert_eq!(module.get_triple(), triple);
 
-    #[cfg(not(any(feature = "llvm3-6", feature = "llvm3-7", feature = "llvm3-8", feature = "llvm3-9",
-                  feature = "llvm4-0", feature = "llvm5-0", feature = "llvm6-0")))]
+    #[cfg(not(any(feature = "llvm4-0", feature = "llvm5-0", feature = "llvm6-0")))]
     {
         module.set_source_file_name("foo.rs");
 
@@ -381,7 +400,9 @@ fn test_linking_modules() {
     // fn_val2 is no longer the same instance of f2
     assert_ne!(module.get_function("f2"), Some(fn_val2));
 
-    let _execution_engine = module.create_jit_execution_engine(OptimizationLevel::None).expect("Could not create Execution Engine");
+    let _execution_engine = module
+        .create_jit_execution_engine(OptimizationLevel::None)
+        .expect("Could not create Execution Engine");
     let module4 = context.create_module("mod4");
 
     // EE owned module links in unowned (empty) module
@@ -396,10 +417,10 @@ fn test_linking_modules() {
 
     // EE owned module links in unowned module which has
     // another definition for the same funciton name, "f2"
-    #[cfg(feature = "llvm3-6")] // Likely a LLVM bug that no error message is produced in 3-6
-    assert_eq!(module.link_in_module(module5).unwrap_err().to_str(), Ok(""));
-    #[cfg(not(feature = "llvm3-6"))]
-    assert_eq!(module.link_in_module(module5).unwrap_err().to_str(), Ok("Linking globals named \'f2\': symbol multiply defined!"));
+    assert_eq!(
+        module.link_in_module(module5).unwrap_err().to_str(),
+        Ok("Linking globals named \'f2\': symbol multiply defined!")
+    );
 
     let module6 = context.create_module("mod5");
     let fn_val4 = module6.add_function("f4", fn_type, None);
@@ -408,7 +429,9 @@ fn test_linking_modules() {
     builder.position_at_end(basic_block4);
     builder.build_return(None);
 
-    let execution_engine2 = module6.create_jit_execution_engine(OptimizationLevel::None).expect("Could not create Execution Engine");
+    let execution_engine2 = module6
+        .create_jit_execution_engine(OptimizationLevel::None)
+        .expect("Could not create Execution Engine");
 
     // EE owned module cannot link another EE owned module
     assert!(module.link_in_module(module6).is_err());
@@ -417,13 +440,12 @@ fn test_linking_modules() {
 
 #[test]
 fn test_metadata_flags() {
-    #[cfg(not(any(feature = "llvm3-6", feature = "llvm3-7", feature = "llvm3-8", feature = "llvm3-9",
-                  feature = "llvm4-0", feature = "llvm5-0", feature = "llvm6-0")))]
+    #[cfg(not(any(feature = "llvm4-0", feature = "llvm5-0", feature = "llvm6-0")))]
     {
         let context = Context::create();
         let module = context.create_module("my_module");
 
-        use self::inkwell::module::FlagBehavior;
+        use inkwell::module::FlagBehavior;
 
         assert!(module.get_flag("some_key").is_none());
 
@@ -467,19 +489,25 @@ fn test_double_ee_from_same_module() {
     builder.position_at_end(basic_block);
     builder.build_return(None);
 
-    module.create_execution_engine().expect("Could not create Execution Engine");
+    module
+        .create_execution_engine()
+        .expect("Could not create Execution Engine");
 
     assert!(module.create_execution_engine().is_err());
 
     let module2 = module.clone();
 
-    module2.create_jit_execution_engine(OptimizationLevel::None).expect("Could not create Execution Engine");
+    module2
+        .create_jit_execution_engine(OptimizationLevel::None)
+        .expect("Could not create Execution Engine");
 
     assert!(module.create_jit_execution_engine(OptimizationLevel::None).is_err());
 
     let module3 = module.clone();
 
-    module3.create_interpreter_execution_engine().expect("Could not create Execution Engine");
+    module3
+        .create_interpreter_execution_engine()
+        .expect("Could not create Execution Engine");
 
     assert!(module.create_interpreter_execution_engine().is_err());
 }

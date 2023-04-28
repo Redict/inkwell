@@ -1,8 +1,7 @@
-use inkwell::{AddressSpace, OptimizationLevel, IntPredicate};
 use inkwell::context::Context;
 use inkwell::execution_engine::FunctionLookupError;
-use inkwell::values::BasicValue;
 use inkwell::targets::{InitializationConfig, Target};
+use inkwell::{AddressSpace, IntPredicate, OptimizationLevel};
 
 type Thunk = unsafe extern "C" fn();
 
@@ -24,8 +23,10 @@ fn test_get_function_address() {
     let execution_engine = module.create_jit_execution_engine(OptimizationLevel::None).unwrap();
 
     unsafe {
-        assert_eq!(execution_engine.get_function::<Thunk>("errors").unwrap_err(),
-            FunctionLookupError::FunctionNotFound);
+        assert_eq!(
+            execution_engine.get_function::<Thunk>("errors").unwrap_err(),
+            FunctionLookupError::FunctionNotFound
+        );
     }
 
     let module = context.create_module("errors_abound");
@@ -38,8 +39,10 @@ fn test_get_function_address() {
     let execution_engine = module.create_jit_execution_engine(OptimizationLevel::None).unwrap();
 
     unsafe {
-        assert_eq!(execution_engine.get_function::<Thunk>("errors").unwrap_err(),
-            FunctionLookupError::FunctionNotFound);
+        assert_eq!(
+            execution_engine.get_function::<Thunk>("errors").unwrap_err(),
+            FunctionLookupError::FunctionNotFound
+        );
 
         assert!(execution_engine.get_function::<Thunk>("func").is_ok());
     }
@@ -52,8 +55,8 @@ fn test_jit_execution_engine() {
     let builder = context.create_builder();
     let i8_type = context.i8_type();
     let i32_type = context.i32_type();
-    let i8_ptr_type = i8_type.ptr_type(AddressSpace::Generic);
-    let i8_ptr_ptr_type = i8_ptr_type.ptr_type(AddressSpace::Generic);
+    let i8_ptr_type = i8_type.ptr_type(AddressSpace::default());
+    let i8_ptr_ptr_type = i8_ptr_type.ptr_type(AddressSpace::default());
     let one_i32 = i32_type.const_int(1, false);
     let three_i32 = i32_type.const_int(3, false);
     let fourtytwo_i32 = i32_type.const_int(42, false);
@@ -89,19 +92,19 @@ fn test_jit_execution_engine() {
 
     Target::initialize_native(&InitializationConfig::default()).expect("Failed to initialize native target");
 
-    let execution_engine = module.create_jit_execution_engine(OptimizationLevel::None).expect("Could not create Execution Engine");
+    let execution_engine = module
+        .create_jit_execution_engine(OptimizationLevel::None)
+        .expect("Could not create Execution Engine");
 
-    let main = execution_engine.get_function_value("main").expect("Could not find main in ExecutionEngine");
+    let main = execution_engine
+        .get_function_value("main")
+        .expect("Could not find main in ExecutionEngine");
 
-    let ret = unsafe {
-        execution_engine.run_function_as_main(main, &["input", "bar"])
-    };
+    let ret = unsafe { execution_engine.run_function_as_main(main, &["input", "bar"]) };
 
     assert_eq!(ret, 1, "unexpected main return code: {}", ret);
 
-    let ret = unsafe {
-        execution_engine.run_function_as_main(main, &["input", "bar", "baz"])
-    };
+    let ret = unsafe { execution_engine.run_function_as_main(main, &["input", "bar", "baz"]) };
 
     assert_eq!(ret, 42, "unexpected main return code: {}", ret);
 }
@@ -131,12 +134,13 @@ fn test_interpreter_execution_engine() {
     assert!(module.create_interpreter_execution_engine().is_ok());
 }
 
-
 #[test]
 fn test_add_remove_module() {
     let context = Context::create();
     let module = context.create_module("test");
-    let ee = module.create_jit_execution_engine(OptimizationLevel::default()).unwrap();
+    let ee = module
+        .create_jit_execution_engine(OptimizationLevel::default())
+        .unwrap();
 
     assert!(ee.add_module(&module).is_err());
 
@@ -152,11 +156,7 @@ fn test_add_remove_module() {
 // but fail when multiple tests are run
 // #[test]
 // fn test_no_longer_segfaults() {
-//     #[cfg(feature = "llvm3-6")]
-//     Target::initialize_r600(&InitializationConfig::default());
-//     #[cfg(not(feature = "llvm3-6"))]
 //     Target::initialize_amd_gpu(&InitializationConfig::default());
-
 
 //     let context = Context::create();
 //     let module = context.create_module("test");

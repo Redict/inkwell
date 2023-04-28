@@ -19,18 +19,18 @@ pub mod support;
 #[deny(missing_docs)]
 pub mod attributes;
 #[deny(missing_docs)]
-#[cfg(not(any(feature = "llvm3-6", feature = "llvm3-7", feature = "llvm3-8", feature = "llvm3-9",
-              feature = "llvm4-0", feature = "llvm5-0", feature = "llvm6-0")))]
-pub mod comdat;
-#[deny(missing_docs)]
 pub mod basic_block;
 pub mod builder;
 #[deny(missing_docs)]
+#[cfg(not(any(feature = "llvm4-0", feature = "llvm5-0", feature = "llvm6-0")))]
+pub mod comdat;
+#[deny(missing_docs)]
 pub mod context;
 pub mod data_layout;
-#[cfg(not(any(feature = "llvm3-6", feature = "llvm3-7", feature = "llvm3-8", feature = "llvm3-9", feature = "llvm4-0", feature = "llvm5-0", feature = "llvm6-0")))]
+#[cfg(not(any(feature = "llvm4-0", feature = "llvm5-0", feature = "llvm6-0")))]
 pub mod debug_info;
 pub mod execution_engine;
+pub mod intrinsics;
 pub mod memory_buffer;
 #[deny(missing_docs)]
 pub mod module;
@@ -41,36 +41,37 @@ pub mod types;
 pub mod values;
 
 // Boilerplate to select a desired llvm_sys version at compile & link time.
-#[cfg(feature="llvm3-6")]
-extern crate llvm_sys_36 as llvm_sys;
-#[cfg(feature="llvm3-7")]
-extern crate llvm_sys_37 as llvm_sys;
-#[cfg(feature="llvm3-8")]
-extern crate llvm_sys_38 as llvm_sys;
-#[cfg(feature="llvm3-9")]
-extern crate llvm_sys_39 as llvm_sys;
-#[cfg(feature="llvm4-0")]
-extern crate llvm_sys_40 as llvm_sys;
-#[cfg(feature="llvm5-0")]
-extern crate llvm_sys_50 as llvm_sys;
-#[cfg(feature="llvm6-0")]
-extern crate llvm_sys_60 as llvm_sys;
-#[cfg(feature="llvm7-0")]
-extern crate llvm_sys_70 as llvm_sys;
-#[cfg(feature="llvm8-0")]
-extern crate llvm_sys_80 as llvm_sys;
-#[cfg(feature="llvm9-0")]
-extern crate llvm_sys_90 as llvm_sys;
-#[cfg(feature="llvm10-0")]
+#[cfg(feature = "llvm10-0")]
 extern crate llvm_sys_100 as llvm_sys;
-#[cfg(feature="llvm11-0")]
+#[cfg(feature = "llvm11-0")]
 extern crate llvm_sys_110 as llvm_sys;
-#[cfg(feature="llvm12-0")]
+#[cfg(feature = "llvm12-0")]
 extern crate llvm_sys_120 as llvm_sys;
-#[cfg(feature="llvm13-0")]
+#[cfg(feature = "llvm13-0")]
 extern crate llvm_sys_130 as llvm_sys;
+#[cfg(feature = "llvm14-0")]
+extern crate llvm_sys_140 as llvm_sys;
+#[cfg(feature = "llvm15-0")]
+extern crate llvm_sys_150 as llvm_sys;
+#[cfg(feature = "llvm16-0")]
+extern crate llvm_sys_160 as llvm_sys;
+#[cfg(feature = "llvm4-0")]
+extern crate llvm_sys_40 as llvm_sys;
+#[cfg(feature = "llvm5-0")]
+extern crate llvm_sys_50 as llvm_sys;
+#[cfg(feature = "llvm6-0")]
+extern crate llvm_sys_60 as llvm_sys;
+#[cfg(feature = "llvm7-0")]
+extern crate llvm_sys_70 as llvm_sys;
+#[cfg(feature = "llvm8-0")]
+extern crate llvm_sys_80 as llvm_sys;
+#[cfg(feature = "llvm9-0")]
+extern crate llvm_sys_90 as llvm_sys;
 
-use llvm_sys::{LLVMIntPredicate, LLVMRealPredicate, LLVMVisibility, LLVMThreadLocalMode, LLVMDLLStorageClass, LLVMAtomicOrdering, LLVMAtomicRMWBinOp};
+use llvm_sys::{
+    LLVMAtomicOrdering, LLVMAtomicRMWBinOp, LLVMDLLStorageClass, LLVMIntPredicate, LLVMRealPredicate,
+    LLVMThreadLocalMode, LLVMVisibility,
+};
 
 #[llvm_versions(7.0..=latest)]
 use llvm_sys::LLVMInlineAsmDialect;
@@ -106,32 +107,47 @@ macro_rules! assert_unique_used_features {
     }
 }
 
-assert_unique_used_features!{"llvm3-6", "llvm3-7", "llvm3-8", "llvm3-9", "llvm4-0", "llvm5-0", "llvm6-0", "llvm7-0", "llvm8-0", "llvm9-0", "llvm10-0", "llvm11-0", "llvm12-0", "llvm13-0"}
+assert_unique_used_features! {"llvm4-0", "llvm5-0", "llvm6-0", "llvm7-0", "llvm8-0", "llvm9-0", "llvm10-0", "llvm11-0", "llvm12-0", "llvm13-0", "llvm14-0", "llvm15-0", "llvm16-0"}
 
 /// Defines the address space in which a global will be inserted.
+///
+/// The default address space is zero. An address space can always be created from a `u16`:
+/// ```no_run
+/// inkwell::AddressSpace::from(1u16);
+/// ```
+///
+/// An Address space is a 24-bit number. To convert from a u32, use the `TryFrom` instance
+///
+/// ```no_run
+/// inkwell::AddressSpace::try_from(42u32).expect("fits in 24-bit unsigned int");
+/// ```
 ///
 /// # Remarks
 /// See also: https://llvm.org/doxygen/NVPTXBaseInfo_8h_source.html
 #[derive(Debug, PartialEq, Eq, Copy, Clone)]
-pub enum AddressSpace {
-    Generic = 0,
-    Global  = 1,
-    Shared  = 3,
-    Const   = 4,
-    Local   = 5,
+pub struct AddressSpace(u32);
+
+impl Default for AddressSpace {
+    fn default() -> Self {
+        AddressSpace(0)
+    }
+}
+
+impl From<u16> for AddressSpace {
+    fn from(val: u16) -> Self {
+        AddressSpace(val as u32)
+    }
 }
 
 impl TryFrom<u32> for AddressSpace {
     type Error = ();
 
     fn try_from(val: u32) -> Result<Self, Self::Error> {
-        match val {
-            0 => Ok(AddressSpace::Generic),
-            1 => Ok(AddressSpace::Global),
-            3 => Ok(AddressSpace::Shared),
-            4 => Ok(AddressSpace::Const),
-            5 => Ok(AddressSpace::Local),
-            _ => Err(()),
+        // address space is a 24-bit integer
+        if val < 1 << 24 {
+            Ok(AddressSpace(val))
+        } else {
+            Err(())
         }
     }
 }
@@ -332,6 +348,16 @@ pub enum AtomicRMWBinOp {
     #[llvm_versions(10.0..=latest)]
     #[llvm_variant(LLVMAtomicRMWBinOpFSub)]
     FSub,
+
+    /// Sets memory to the greater of the two float-typed values, one provided and one from memory. Returns the value that was in memory.
+    #[llvm_versions(15.0..=latest)]
+    #[llvm_variant(LLVMAtomicRMWBinOpFMax)]
+    FMax,
+
+    /// Sets memory to the lesser of the two float-typed values, one provided and one from memory. Returns the value that was in memory.
+    #[llvm_versions(15.0..=latest)]
+    #[llvm_variant(LLVMAtomicRMWBinOpFMin)]
+    FMin,
 }
 
 /// Defines the optimization level used to compile a `Module`.
@@ -341,9 +367,9 @@ pub enum AtomicRMWBinOp {
 #[repr(u32)]
 #[derive(Debug, PartialEq, Eq, Copy, Clone)]
 pub enum OptimizationLevel {
-    None       = 0,
-    Less       = 1,
-    Default    = 2,
+    None = 0,
+    Less = 1,
+    Default = 2,
     Aggressive = 3,
 }
 
@@ -387,7 +413,7 @@ impl ThreadLocalMode {
             LLVMThreadLocalMode::LLVMLocalDynamicTLSModel => Some(ThreadLocalMode::LocalDynamicTLSModel),
             LLVMThreadLocalMode::LLVMInitialExecTLSModel => Some(ThreadLocalMode::InitialExecTLSModel),
             LLVMThreadLocalMode::LLVMLocalExecTLSModel => Some(ThreadLocalMode::LocalExecTLSModel),
-            LLVMThreadLocalMode::LLVMNotThreadLocal => None
+            LLVMThreadLocalMode::LLVMNotThreadLocal => None,
         }
     }
 

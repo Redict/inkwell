@@ -1,14 +1,17 @@
-use llvm_sys::core::{LLVMGetPointerAddressSpace, LLVMConstArray};
+use llvm_sys::core::{LLVMConstArray, LLVMGetPointerAddressSpace};
 use llvm_sys::prelude::{LLVMTypeRef, LLVMValueRef};
 
-use crate::AddressSpace;
 use crate::context::ContextRef;
+use crate::support::LLVMString;
 use crate::types::traits::AsTypeRef;
-use crate::types::{AnyTypeEnum, BasicTypeEnum, ArrayType, FunctionType, Type, VectorType};
-use crate::values::{AsValueRef, ArrayValue, PointerValue, IntValue};
+#[llvm_versions(4.0..=14.0)]
+use crate::types::AnyTypeEnum;
+use crate::types::{ArrayType, FunctionType, Type, VectorType};
+use crate::values::{ArrayValue, AsValueRef, IntValue, PointerValue};
+use crate::AddressSpace;
 
-use std::convert::TryFrom;
 use crate::types::enums::BasicMetadataTypeEnum;
+use std::fmt::{self, Display};
 
 /// A `PointerType` is the type of a pointer constant or variable.
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
@@ -17,7 +20,11 @@ pub struct PointerType<'ctx> {
 }
 
 impl<'ctx> PointerType<'ctx> {
-    pub(crate) unsafe fn new(ptr_type: LLVMTypeRef) -> Self {
+    /// Create `PointerType` from [`LLVMTypeRef`]
+    ///
+    /// # Safety
+    /// Undefined behavior, if referenced type isn't pointer type
+    pub unsafe fn new(ptr_type: LLVMTypeRef) -> Self {
         assert!(!ptr_type.is_null());
 
         PointerType {
@@ -35,7 +42,7 @@ impl<'ctx> PointerType<'ctx> {
     ///
     /// let context = Context::create();
     /// let f32_type = context.f32_type();
-    /// let f32_ptr_type = f32_type.ptr_type(AddressSpace::Generic);
+    /// let f32_ptr_type = f32_type.ptr_type(AddressSpace::default());
     /// let f32_ptr_type_size = f32_ptr_type.size_of();
     /// ```
     pub fn size_of(self) -> IntValue<'ctx> {
@@ -52,7 +59,7 @@ impl<'ctx> PointerType<'ctx> {
     ///
     /// let context = Context::create();
     /// let f32_type = context.f32_type();
-    /// let f32_ptr_type = f32_type.ptr_type(AddressSpace::Generic);
+    /// let f32_ptr_type = f32_type.ptr_type(AddressSpace::default());
     /// let f32_ptr_type_alignment = f32_ptr_type.get_alignment();
     /// ```
     pub fn get_alignment(self) -> IntValue<'ctx> {
@@ -69,9 +76,22 @@ impl<'ctx> PointerType<'ctx> {
     ///
     /// let context = Context::create();
     /// let f32_type = context.f32_type();
-    /// let f32_ptr_type = f32_type.ptr_type(AddressSpace::Generic);
-    /// let f32_ptr_ptr_type = f32_ptr_type.ptr_type(AddressSpace::Generic);
+    /// let f32_ptr_type = f32_type.ptr_type(AddressSpace::default());
+    /// let f32_ptr_ptr_type = f32_ptr_type.ptr_type(AddressSpace::default());
     ///
+    /// #[cfg(any(
+    ///     feature = "llvm4-0",
+    ///     feature = "llvm5-0",
+    ///     feature = "llvm6-0",
+    ///     feature = "llvm7-0",
+    ///     feature = "llvm8-0",
+    ///     feature = "llvm9-0",
+    ///     feature = "llvm10-0",
+    ///     feature = "llvm11-0",
+    ///     feature = "llvm12-0",
+    ///     feature = "llvm13-0",
+    ///     feature = "llvm14-0"
+    /// ))]
     /// assert_eq!(f32_ptr_ptr_type.get_element_type().into_pointer_type(), f32_ptr_type);
     /// ```
     pub fn ptr_type(self, address_space: AddressSpace) -> PointerType<'ctx> {
@@ -88,9 +108,9 @@ impl<'ctx> PointerType<'ctx> {
     ///
     /// let context = Context::create();
     /// let f32_type = context.f32_type();
-    /// let f32_ptr_type = f32_type.ptr_type(AddressSpace::Generic);
+    /// let f32_ptr_type = f32_type.ptr_type(AddressSpace::default());
     ///
-    /// assert_eq!(*f32_ptr_type.get_context(), context);
+    /// assert_eq!(f32_ptr_type.get_context(), context);
     /// ```
     // TODO: Move to AnyType trait
     pub fn get_context(self) -> ContextRef<'ctx> {
@@ -107,7 +127,7 @@ impl<'ctx> PointerType<'ctx> {
     ///
     /// let context = Context::create();
     /// let f32_type = context.f32_type();
-    /// let f32_ptr_type = f32_type.ptr_type(AddressSpace::Generic);
+    /// let f32_ptr_type = f32_type.ptr_type(AddressSpace::default());
     /// let fn_type = f32_ptr_type.fn_type(&[], false);
     /// ```
     pub fn fn_type(self, param_types: &[BasicMetadataTypeEnum<'ctx>], is_var_args: bool) -> FunctionType<'ctx> {
@@ -124,7 +144,7 @@ impl<'ctx> PointerType<'ctx> {
     ///
     /// let context = Context::create();
     /// let f32_type = context.f32_type();
-    /// let f32_ptr_type = f32_type.ptr_type(AddressSpace::Generic);
+    /// let f32_ptr_type = f32_type.ptr_type(AddressSpace::default());
     /// let f32_ptr_array_type = f32_ptr_type.array_type(3);
     ///
     /// assert_eq!(f32_ptr_array_type.len(), 3);
@@ -144,23 +164,19 @@ impl<'ctx> PointerType<'ctx> {
     ///
     /// let context = Context::create();
     /// let f32_type = context.f32_type();
-    /// let f32_ptr_type = f32_type.ptr_type(AddressSpace::Generic);
+    /// let f32_ptr_type = f32_type.ptr_type(AddressSpace::default());
     ///
-    /// assert_eq!(f32_ptr_type.get_address_space(), AddressSpace::Generic);
+    /// assert_eq!(f32_ptr_type.get_address_space(), AddressSpace::default());
     /// ```
     pub fn get_address_space(self) -> AddressSpace {
-        let addr_space = unsafe {
-            LLVMGetPointerAddressSpace(self.as_type_ref())
-        };
+        let addr_space = unsafe { LLVMGetPointerAddressSpace(self.as_type_ref()) };
 
-        AddressSpace::try_from(addr_space).expect("Unexpectedly found invalid AddressSpace value")
+        AddressSpace(addr_space)
     }
 
-    // See Type::print_to_stderr note on 5.0+ status
-    /// Prints the definition of an `IntType` to stderr. Not available in newer LLVM versions.
-    #[llvm_versions(3.7..=4.0)]
-    pub fn print_to_stderr(self) {
-        self.ptr_type.print_to_stderr()
+    /// Print the definition of a `PointerType` to `LLVMString`.
+    pub fn print_to_string(self) -> LLVMString {
+        self.ptr_type.print_to_string()
     }
 
     /// Creates a null `PointerValue` of this `PointerType`.
@@ -174,15 +190,13 @@ impl<'ctx> PointerType<'ctx> {
     /// // Local Context
     /// let context = Context::create();
     /// let f32_type = context.f32_type();
-    /// let f32_ptr_type = f32_type.ptr_type(AddressSpace::Generic);
+    /// let f32_ptr_type = f32_type.ptr_type(AddressSpace::default());
     /// let f32_ptr_null = f32_ptr_type.const_null();
     ///
     /// assert!(f32_ptr_null.is_null());
     /// ```
     pub fn const_null(self) -> PointerValue<'ctx> {
-        unsafe {
-            PointerValue::new(self.ptr_type.const_zero())
-        }
+        unsafe { PointerValue::new(self.ptr_type.const_zero()) }
     }
 
     // REVIEW: Unlike the other const_zero functions, this one becomes null instead of a 0 value. Maybe remove?
@@ -198,13 +212,11 @@ impl<'ctx> PointerType<'ctx> {
     ///
     /// let context = Context::create();
     /// let f32_type = context.f32_type();
-    /// let f32_ptr_type = f32_type.ptr_type(AddressSpace::Generic);
+    /// let f32_ptr_type = f32_type.ptr_type(AddressSpace::default());
     /// let f32_ptr_zero = f32_ptr_type.const_zero();
     /// ```
     pub fn const_zero(self) -> PointerValue<'ctx> {
-        unsafe {
-            PointerValue::new(self.ptr_type.const_zero())
-        }
+        unsafe { PointerValue::new(self.ptr_type.const_zero()) }
     }
 
     /// Creates an undefined instance of a `PointerType`.
@@ -216,15 +228,13 @@ impl<'ctx> PointerType<'ctx> {
     ///
     /// let context = Context::create();
     /// let f32_type = context.f32_type();
-    /// let f32_ptr_type = f32_type.ptr_type(AddressSpace::Generic);
+    /// let f32_ptr_type = f32_type.ptr_type(AddressSpace::default());
     /// let f32_ptr_undef = f32_ptr_type.get_undef();
     ///
     /// assert!(f32_ptr_undef.is_undef());
     /// ```
     pub fn get_undef(self) -> PointerValue<'ctx> {
-        unsafe {
-            PointerValue::new(self.ptr_type.get_undef())
-        }
+        unsafe { PointerValue::new(self.ptr_type.get_undef()) }
     }
 
     /// Creates a `VectorType` with this `PointerType` for its element type.
@@ -237,7 +247,7 @@ impl<'ctx> PointerType<'ctx> {
     ///
     /// let context = Context::create();
     /// let f32_type = context.f32_type();
-    /// let f32_ptr_type = f32_type.ptr_type(AddressSpace::Generic);
+    /// let f32_ptr_type = f32_type.ptr_type(AddressSpace::default());
     /// let f32_ptr_vec_type = f32_ptr_type.vec_type(3);
     ///
     /// assert_eq!(f32_ptr_vec_type.get_size(), 3);
@@ -258,10 +268,11 @@ impl<'ctx> PointerType<'ctx> {
     ///
     /// let context = Context::create();
     /// let f32_type = context.f32_type();
-    /// let f32_ptr_type = f32_type.ptr_type(AddressSpace::Generic);
+    /// let f32_ptr_type = f32_type.ptr_type(AddressSpace::default());
     ///
     /// assert_eq!(f32_ptr_type.get_element_type().into_float_type(), f32_type);
     /// ```
+    #[llvm_versions(4.0..=14.0)]
     pub fn get_element_type(self) -> AnyTypeEnum<'ctx> {
         self.ptr_type.get_element_type()
     }
@@ -275,24 +286,32 @@ impl<'ctx> PointerType<'ctx> {
     ///
     /// let context = Context::create();
     /// let f32_type = context.f32_type();
-    /// let f32_ptr_type = f32_type.ptr_type(AddressSpace::Generic);
+    /// let f32_ptr_type = f32_type.ptr_type(AddressSpace::default());
     /// let f32_ptr_val = f32_ptr_type.const_null();
     /// let f32_ptr_array = f32_ptr_type.const_array(&[f32_ptr_val, f32_ptr_val]);
     ///
     /// assert!(f32_ptr_array.is_const());
     /// ```
     pub fn const_array(self, values: &[PointerValue<'ctx>]) -> ArrayValue<'ctx> {
-        let mut values: Vec<LLVMValueRef> = values.iter()
-                                                  .map(|val| val.as_value_ref())
-                                                  .collect();
+        let mut values: Vec<LLVMValueRef> = values.iter().map(|val| val.as_value_ref()).collect();
         unsafe {
-            ArrayValue::new(LLVMConstArray(self.as_type_ref(), values.as_mut_ptr(), values.len() as u32))
+            ArrayValue::new(LLVMConstArray(
+                self.as_type_ref(),
+                values.as_mut_ptr(),
+                values.len() as u32,
+            ))
         }
     }
 }
 
-impl AsTypeRef for PointerType<'_> {
+unsafe impl AsTypeRef for PointerType<'_> {
     fn as_type_ref(&self) -> LLVMTypeRef {
         self.ptr_type.ty
+    }
+}
+
+impl Display for PointerType<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.print_to_string())
     }
 }

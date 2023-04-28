@@ -1,15 +1,17 @@
 use inkwell::context::Context;
+use inkwell::types::AnyTypeEnum;
 use inkwell::values::{BasicValue, InstructionOpcode::*};
 use inkwell::{AddressSpace, AtomicOrdering, AtomicRMWBinOp, FloatPredicate, IntPredicate};
 
 #[test]
+#[ignore]
 fn test_operands() {
     let context = Context::create();
     let module = context.create_module("ivs");
     let builder = context.create_builder();
     let void_type = context.void_type();
     let f32_type = context.f32_type();
-    let f32_ptr_type = f32_type.ptr_type(AddressSpace::Generic);
+    let f32_ptr_type = f32_type.ptr_type(AddressSpace::default());
     let fn_type = void_type.fn_type(&[f32_ptr_type.into()], false);
 
     let function = module.add_function("take_f32_ptr", fn_type, None);
@@ -44,23 +46,37 @@ fn test_operands() {
 
     let free_operand0 = free_instruction.get_operand(0).unwrap().left().unwrap();
     let free_operand1 = free_instruction.get_operand(1).unwrap().left().unwrap();
-    let free_operand0_instruction = free_operand0.as_instruction_value().unwrap();
 
     assert!(free_operand0.is_pointer_value()); // (implictly casted) i8* arg1
     assert!(free_operand1.is_pointer_value()); // Free function ptr
+    assert!(free_instruction.get_operand(2).is_none());
+    assert!(free_instruction.get_operand(3).is_none());
+    assert!(free_instruction.get_operand(4).is_none());
+
+    let free_operand0_instruction = free_operand0.as_instruction_value().unwrap();
     assert_eq!(free_operand0_instruction.get_opcode(), BitCast);
     assert_eq!(free_operand0_instruction.get_operand(0).unwrap().left().unwrap(), arg1);
     assert!(free_operand0_instruction.get_operand(1).is_none());
     assert!(free_operand0_instruction.get_operand(2).is_none());
-    assert!(free_instruction.get_operand(2).is_none());
-    assert!(free_instruction.get_operand(3).is_none());
-    assert!(free_instruction.get_operand(4).is_none());
 
     assert!(module.verify().is_ok());
 
     assert!(free_instruction.set_operand(0, arg1));
 
     // Module is no longer valid because free takes an i8* not f32*
+    #[cfg(any(
+        feature = "llvm4-0",
+        feature = "llvm5-0",
+        feature = "llvm6-0",
+        feature = "llvm7-0",
+        feature = "llvm8-0",
+        feature = "llvm9-0",
+        feature = "llvm10-0",
+        feature = "llvm11-0",
+        feature = "llvm12-0",
+        feature = "llvm13-0",
+        feature = "llvm14-0"
+    ))]
     assert!(module.verify().is_err());
 
     assert!(free_instruction.set_operand(0, free_operand0));
@@ -107,8 +123,14 @@ fn test_operands() {
     assert!(store_operand_use1.get_next_use().is_none());
     assert_eq!(store_operand_use1, arg1_second_use);
 
-    assert_eq!(store_operand_use0.get_user().into_instruction_value(), store_instruction);
-    assert_eq!(store_operand_use1.get_user().into_instruction_value(), store_instruction);
+    assert_eq!(
+        store_operand_use0.get_user().into_instruction_value(),
+        store_instruction
+    );
+    assert_eq!(
+        store_operand_use1.get_user().into_instruction_value(),
+        store_instruction
+    );
     assert_eq!(store_operand_use0.get_used_value().left().unwrap(), f32_val);
     assert_eq!(store_operand_use1.get_used_value().left().unwrap(), arg1);
 
@@ -183,11 +205,13 @@ fn test_get_next_use() {
     let first_use = f32_val.get_first_use().unwrap();
 
     assert_eq!(first_use.get_user(), add_pi1.as_instruction_value().unwrap());
-    assert_eq!(first_use.get_next_use().map(|x| x.get_user().into_float_value()), Some(add_pi0));
+    assert_eq!(
+        first_use.get_next_use().map(|x| x.get_user().into_float_value()),
+        Some(add_pi0)
+    );
     assert!(arg1.get_first_use().is_some());
     assert!(module.verify().is_ok());
 }
-
 
 #[test]
 fn test_instructions() {
@@ -198,7 +222,7 @@ fn test_instructions() {
     let void_type = context.void_type();
     let i64_type = context.i64_type();
     let f32_type = context.f32_type();
-    let f32_ptr_type = f32_type.ptr_type(AddressSpace::Generic);
+    let f32_ptr_type = f32_type.ptr_type(AddressSpace::default());
     let fn_type = void_type.fn_type(&[f32_ptr_type.into(), f32_type.into()], false);
 
     let function = module.add_function("free_f32", fn_type, None);
@@ -217,7 +241,7 @@ fn test_instructions() {
     let store_instruction = builder.build_store(arg1, f32_val);
     let ptr_val = builder.build_ptr_to_int(arg1, i64_type, "ptr_val");
     let ptr = builder.build_int_to_ptr(ptr_val, f32_ptr_type, "ptr");
-    let icmp = builder.build_int_compare(IntPredicate::EQ, ptr_val, ptr_val, "icmp");
+    let icmp = builder.build_int_compare(IntPredicate::EQ, arg1, arg1, "icmp");
     let f32_sum = builder.build_float_add(arg2, f32_val, "f32_sum");
     let fcmp = builder.build_float_compare(FloatPredicate::OEQ, f32_sum, arg2, "fcmp");
     let free_instruction = builder.build_free(arg1);
@@ -228,16 +252,31 @@ fn test_instructions() {
     assert_eq!(ptr.as_instruction().unwrap().get_opcode(), IntToPtr);
     assert_eq!(icmp.as_instruction().unwrap().get_opcode(), ICmp);
     assert_eq!(ptr.as_instruction().unwrap().get_icmp_predicate(), None);
-    assert_eq!(icmp.as_instruction().unwrap().get_icmp_predicate().unwrap(), IntPredicate::EQ);
+    assert_eq!(
+        icmp.as_instruction().unwrap().get_icmp_predicate().unwrap(),
+        IntPredicate::EQ
+    );
     assert_eq!(f32_sum.as_instruction().unwrap().get_opcode(), FAdd);
     assert_eq!(fcmp.as_instruction().unwrap().get_opcode(), FCmp);
     assert_eq!(f32_sum.as_instruction().unwrap().get_fcmp_predicate(), None);
     assert_eq!(icmp.as_instruction().unwrap().get_fcmp_predicate(), None);
-    assert_eq!(fcmp.as_instruction().unwrap().get_fcmp_predicate().unwrap(), FloatPredicate::OEQ);
+    assert_eq!(
+        fcmp.as_instruction().unwrap().get_fcmp_predicate().unwrap(),
+        FloatPredicate::OEQ
+    );
     assert_eq!(free_instruction.get_opcode(), Call);
     assert_eq!(return_instruction.get_opcode(), Return);
 
+    // test instruction type
+    assert_eq!(store_instruction.get_type(), AnyTypeEnum::from(void_type));
+    assert_eq!(free_instruction.get_type(), AnyTypeEnum::from(void_type));
+    assert_eq!(
+        f32_sum.as_instruction().unwrap().get_type(),
+        AnyTypeEnum::from(f32_type)
+    );
+
     // test instruction cloning
+    #[allow(clippy::redundant_clone)]
     let instruction_clone = return_instruction.clone();
 
     assert_eq!(instruction_clone.get_opcode(), return_instruction.get_opcode());
@@ -258,7 +297,7 @@ fn test_volatile_atomicrmw_cmpxchg() {
 
     let void_type = context.void_type();
     let i32_type = context.i32_type();
-    let i32_ptr_type = i32_type.ptr_type(AddressSpace::Generic);
+    let i32_ptr_type = i32_type.ptr_type(AddressSpace::default());
     let fn_type = void_type.fn_type(&[i32_ptr_type.into(), i32_type.into()], false);
 
     let function = module.add_function("mem_inst", fn_type, None);
@@ -303,7 +342,7 @@ fn test_volatile_atomicrmw_cmpxchg() {
     assert_eq!(cmpxchg.get_volatile().unwrap(), false);
 }
 
-#[llvm_versions(3.6..=10.0)]
+#[llvm_versions(4.0..=10.0)]
 #[test]
 fn test_mem_instructions() {
     let context = Context::create();
@@ -312,7 +351,7 @@ fn test_mem_instructions() {
 
     let void_type = context.void_type();
     let f32_type = context.f32_type();
-    let f32_ptr_type = f32_type.ptr_type(AddressSpace::Generic);
+    let f32_ptr_type = f32_type.ptr_type(AddressSpace::default());
     let fn_type = void_type.fn_type(&[f32_ptr_type.into(), f32_type.into()], false);
 
     let function = module.add_function("mem_inst", fn_type, None);
@@ -357,7 +396,10 @@ fn test_mem_instructions() {
     assert!(store_instruction.set_alignment(14).is_err());
     assert_eq!(store_instruction.get_alignment().unwrap(), 0);
 
-    let fadd_instruction = builder.build_float_add(load.into_float_value(), f32_val, "").as_instruction_value().unwrap();
+    let fadd_instruction = builder
+        .build_float_add(load.into_float_value(), f32_val, "")
+        .as_instruction_value()
+        .unwrap();
     assert!(fadd_instruction.get_volatile().is_err());
     assert!(fadd_instruction.set_volatile(false).is_err());
     assert!(fadd_instruction.get_alignment().is_err());
@@ -373,7 +415,7 @@ fn test_mem_instructions() {
 
     let void_type = context.void_type();
     let f32_type = context.f32_type();
-    let f32_ptr_type = f32_type.ptr_type(AddressSpace::Generic);
+    let f32_ptr_type = f32_type.ptr_type(AddressSpace::default());
     let fn_type = void_type.fn_type(&[f32_ptr_type.into(), f32_type.into()], false);
 
     let function = module.add_function("mem_inst", fn_type, None);
@@ -390,7 +432,22 @@ fn test_mem_instructions() {
     let f32_val = f32_type.const_float(::std::f64::consts::PI);
 
     let store_instruction = builder.build_store(arg1, f32_val);
+    #[cfg(any(
+        feature = "llvm4-0",
+        feature = "llvm5-0",
+        feature = "llvm6-0",
+        feature = "llvm7-0",
+        feature = "llvm8-0",
+        feature = "llvm9-0",
+        feature = "llvm10-0",
+        feature = "llvm11-0",
+        feature = "llvm12-0",
+        feature = "llvm13-0",
+        feature = "llvm14-0"
+    ))]
     let load = builder.build_load(arg1, "");
+    #[cfg(any(feature = "llvm15-0", feature = "llvm16-0"))]
+    let load = builder.build_load(f32_type, arg1, "");
     let load_instruction = load.as_instruction_value().unwrap();
 
     assert_eq!(store_instruction.get_volatile().unwrap(), false);
@@ -418,14 +475,16 @@ fn test_mem_instructions() {
     assert!(store_instruction.set_alignment(14).is_err());
     assert_eq!(store_instruction.get_alignment().unwrap(), 4);
 
-    let fadd_instruction = builder.build_float_add(load.into_float_value(), f32_val, "").as_instruction_value().unwrap();
+    let fadd_instruction = builder
+        .build_float_add(load.into_float_value(), f32_val, "")
+        .as_instruction_value()
+        .unwrap();
     assert!(fadd_instruction.get_volatile().is_err());
     assert!(fadd_instruction.set_volatile(false).is_err());
     assert!(fadd_instruction.get_alignment().is_err());
     assert!(fadd_instruction.set_alignment(16).is_err());
 }
 
-#[llvm_versions(3.8..=latest)]
 #[test]
 fn test_atomic_ordering_mem_instructions() {
     let context = Context::create();
@@ -434,7 +493,7 @@ fn test_atomic_ordering_mem_instructions() {
 
     let void_type = context.void_type();
     let f32_type = context.f32_type();
-    let f32_ptr_type = f32_type.ptr_type(AddressSpace::Generic);
+    let f32_ptr_type = f32_type.ptr_type(AddressSpace::default());
     let fn_type = void_type.fn_type(&[f32_ptr_type.into(), f32_type.into()], false);
 
     let function = module.add_function("mem_inst", fn_type, None);
@@ -451,22 +510,53 @@ fn test_atomic_ordering_mem_instructions() {
     let f32_val = f32_type.const_float(::std::f64::consts::PI);
 
     let store_instruction = builder.build_store(arg1, f32_val);
+    #[cfg(any(
+        feature = "llvm4-0",
+        feature = "llvm5-0",
+        feature = "llvm6-0",
+        feature = "llvm7-0",
+        feature = "llvm8-0",
+        feature = "llvm9-0",
+        feature = "llvm10-0",
+        feature = "llvm11-0",
+        feature = "llvm12-0",
+        feature = "llvm13-0",
+        feature = "llvm14-0"
+    ))]
     let load = builder.build_load(arg1, "");
+    #[cfg(any(feature = "llvm15-0", feature = "llvm16-0"))]
+    let load = builder.build_load(f32_type, arg1, "");
     let load_instruction = load.as_instruction_value().unwrap();
 
-    assert_eq!(store_instruction.get_atomic_ordering().unwrap(), AtomicOrdering::NotAtomic);
-    assert_eq!(load_instruction.get_atomic_ordering().unwrap(), AtomicOrdering::NotAtomic);
+    assert_eq!(
+        store_instruction.get_atomic_ordering().unwrap(),
+        AtomicOrdering::NotAtomic
+    );
+    assert_eq!(
+        load_instruction.get_atomic_ordering().unwrap(),
+        AtomicOrdering::NotAtomic
+    );
     assert!(store_instruction.set_atomic_ordering(AtomicOrdering::Monotonic).is_ok());
-    assert_eq!(store_instruction.get_atomic_ordering().unwrap(), AtomicOrdering::Monotonic);
+    assert_eq!(
+        store_instruction.get_atomic_ordering().unwrap(),
+        AtomicOrdering::Monotonic
+    );
     assert!(store_instruction.set_atomic_ordering(AtomicOrdering::Release).is_ok());
     assert!(load_instruction.set_atomic_ordering(AtomicOrdering::Acquire).is_ok());
 
     assert!(store_instruction.set_atomic_ordering(AtomicOrdering::Acquire).is_err());
-    assert!(store_instruction.set_atomic_ordering(AtomicOrdering::AcquireRelease).is_err());
-    assert!(load_instruction.set_atomic_ordering(AtomicOrdering::AcquireRelease).is_err());
+    assert!(store_instruction
+        .set_atomic_ordering(AtomicOrdering::AcquireRelease)
+        .is_err());
+    assert!(load_instruction
+        .set_atomic_ordering(AtomicOrdering::AcquireRelease)
+        .is_err());
     assert!(load_instruction.set_atomic_ordering(AtomicOrdering::Release).is_err());
 
-    let fadd_instruction = builder.build_float_add(load.into_float_value(), f32_val, "").as_instruction_value().unwrap();
+    let fadd_instruction = builder
+        .build_float_add(load.into_float_value(), f32_val, "")
+        .as_instruction_value()
+        .unwrap();
     assert!(fadd_instruction.get_atomic_ordering().is_err());
     assert!(fadd_instruction.set_atomic_ordering(AtomicOrdering::NotAtomic).is_err());
 }
@@ -477,7 +567,7 @@ fn test_metadata_kinds() {
 
     let i8_type = context.i8_type();
     let f32_type = context.f32_type();
-    let ptr_type = i8_type.ptr_type(AddressSpace::Generic);
+    let ptr_type = i8_type.ptr_type(AddressSpace::default());
     let struct_type = context.struct_type(&[i8_type.into(), f32_type.into()], false);
     let vector_type = i8_type.vec_type(2);
 

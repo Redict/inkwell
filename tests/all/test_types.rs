@@ -1,7 +1,7 @@
-use inkwell::AddressSpace;
 use inkwell::context::Context;
-use inkwell::values::AnyValue;
 use inkwell::types::BasicType;
+use inkwell::values::AnyValue;
+use inkwell::AddressSpace;
 
 #[test]
 fn test_struct_type() {
@@ -16,21 +16,18 @@ fn test_struct_type() {
     assert!(!av_struct.is_opaque());
     assert!(av_struct.is_sized());
     assert!(av_struct.get_name().is_none());
-    assert_eq!(*av_struct.get_context(), context);
+    assert_eq!(av_struct.get_context(), context);
     assert_eq!(av_struct.count_fields(), 2);
     assert_eq!(av_struct.get_field_types(), &[int_vector.into(), float_array.into()]);
 
-    #[cfg(not(feature = "llvm3-6"))]
-    {
-        let field_1 = av_struct.get_field_type_at_index(0).unwrap();
-        let field_2 = av_struct.get_field_type_at_index(1).unwrap();
+    let field_1 = av_struct.get_field_type_at_index(0).unwrap();
+    let field_2 = av_struct.get_field_type_at_index(1).unwrap();
 
-        assert!(field_1.is_vector_type());
-        assert!(field_2.is_array_type());
-        assert!(av_struct.get_field_type_at_index(2).is_none());
-        assert!(av_struct.get_field_type_at_index(200).is_none());
-        assert_eq!(av_struct.get_field_types(), vec![field_1, field_2]);
-    }
+    assert!(field_1.is_vector_type());
+    assert!(field_2.is_array_type());
+    assert!(av_struct.get_field_type_at_index(2).is_none());
+    assert!(av_struct.get_field_type_at_index(200).is_none());
+    assert_eq!(av_struct.get_field_types(), vec![field_1, field_2]);
 
     let av_struct = context.struct_type(&[int_vector.into(), float_array.into()], true);
 
@@ -39,20 +36,17 @@ fn test_struct_type() {
     assert!(av_struct.is_sized());
     // REVIEW: Is there a way to name a non opaque struct?
     assert!(av_struct.get_name().is_none());
-    assert_eq!(*av_struct.get_context(), context);
+    assert_eq!(av_struct.get_context(), context);
     assert_eq!(av_struct.count_fields(), 2);
 
-    #[cfg(not(feature = "llvm3-6"))]
-    {
-        let field_1 = av_struct.get_field_type_at_index(0).unwrap();
-        let field_2 = av_struct.get_field_type_at_index(1).unwrap();
+    let field_1 = av_struct.get_field_type_at_index(0).unwrap();
+    let field_2 = av_struct.get_field_type_at_index(1).unwrap();
 
-        assert!(field_1.is_vector_type());
-        assert!(field_2.is_array_type());
-        assert!(av_struct.get_field_type_at_index(2).is_none());
-        assert!(av_struct.get_field_type_at_index(200).is_none());
-        assert_eq!(av_struct.get_field_types(), vec![field_1, field_2]);
-    }
+    assert!(field_1.is_vector_type());
+    assert!(field_2.is_array_type());
+    assert!(av_struct.get_field_type_at_index(2).is_none());
+    assert!(av_struct.get_field_type_at_index(200).is_none());
+    assert_eq!(av_struct.get_field_types(), vec![field_1, field_2]);
 
     let opaque_struct = context.opaque_struct_type("opaque_struct");
 
@@ -60,17 +54,13 @@ fn test_struct_type() {
     assert!(opaque_struct.is_opaque());
     assert!(!opaque_struct.is_sized());
     assert_eq!(opaque_struct.get_name().map(|s| s.to_str()), Some(Ok("opaque_struct")));
-    assert_eq!(*opaque_struct.get_context(), context);
+    assert_eq!(opaque_struct.get_context(), context);
     assert_eq!(opaque_struct.count_fields(), 0);
     assert!(opaque_struct.get_field_types().is_empty());
-
-    #[cfg(not(feature = "llvm3-6"))]
-    {
-        assert!(opaque_struct.get_field_type_at_index(0).is_none());
-        assert!(opaque_struct.get_field_type_at_index(1).is_none());
-        assert!(opaque_struct.get_field_type_at_index(2).is_none());
-        assert!(opaque_struct.get_field_type_at_index(200).is_none());
-    }
+    assert!(opaque_struct.get_field_type_at_index(0).is_none());
+    assert!(opaque_struct.get_field_type_at_index(1).is_none());
+    assert!(opaque_struct.get_field_type_at_index(2).is_none());
+    assert!(opaque_struct.get_field_type_at_index(200).is_none());
 
     assert!(opaque_struct.set_body(&[int_vector.into(), float_array.into()], true));
 
@@ -79,22 +69,25 @@ fn test_struct_type() {
     assert!(no_longer_opaque_struct.is_packed());
     assert!(!no_longer_opaque_struct.is_opaque());
     assert!(no_longer_opaque_struct.is_sized());
-    assert_eq!(no_longer_opaque_struct.get_name().map(|s| s.to_str()), Some(Ok("opaque_struct")));
-    assert_eq!(*no_longer_opaque_struct.get_context(), context);
+    assert_eq!(
+        no_longer_opaque_struct.get_name().map(|s| s.to_str()),
+        Some(Ok("opaque_struct"))
+    );
+    assert_eq!(no_longer_opaque_struct.get_context(), context);
     assert_eq!(no_longer_opaque_struct.count_fields(), 2);
-    assert_eq!(no_longer_opaque_struct.get_field_types(), &[int_vector.into(), float_array.into()]);
+    assert_eq!(
+        no_longer_opaque_struct.get_field_types(),
+        &[int_vector.into(), float_array.into()]
+    );
 
-    #[cfg(not(feature = "llvm3-6"))]
-    {
-        let field_1 = no_longer_opaque_struct.get_field_type_at_index(0).unwrap();
-        let field_2 = no_longer_opaque_struct.get_field_type_at_index(1).unwrap();
+    let field_1 = no_longer_opaque_struct.get_field_type_at_index(0).unwrap();
+    let field_2 = no_longer_opaque_struct.get_field_type_at_index(1).unwrap();
 
-        assert!(field_1.is_vector_type());
-        assert!(field_2.is_array_type());
-        assert!(no_longer_opaque_struct.get_field_type_at_index(2).is_none());
-        assert!(no_longer_opaque_struct.get_field_type_at_index(200).is_none());
-        assert_eq!(no_longer_opaque_struct.get_field_types(), vec![field_1, field_2]);
-    }
+    assert!(field_1.is_vector_type());
+    assert!(field_2.is_array_type());
+    assert!(no_longer_opaque_struct.get_field_type_at_index(2).is_none());
+    assert!(no_longer_opaque_struct.get_field_type_at_index(200).is_none());
+    assert_eq!(no_longer_opaque_struct.get_field_types(), vec![field_1, field_2]);
 }
 
 #[test]
@@ -105,7 +98,7 @@ fn test_function_type() {
     let fn_type = int.fn_type(&[int.into(), int.into(), float.into()], false);
 
     assert!(!fn_type.is_var_arg());
-    assert_eq!(*fn_type.get_context(), context);
+    assert_eq!(fn_type.get_context(), context);
 
     let param_types = fn_type.get_param_types();
 
@@ -117,14 +110,12 @@ fn test_function_type() {
     let fn_type = int.fn_type(&[int.into(), float.into()], true);
 
     assert!(fn_type.is_var_arg());
-    assert_eq!(*fn_type.get_context(), context);
+    assert_eq!(fn_type.get_context(), context);
 }
 
 #[test]
 fn test_sized_types() {
-    unsafe {
-        Context::get_global(sized_types)
-    }
+    unsafe { Context::get_global(sized_types) }
 }
 
 fn sized_types(global_ctx: &Context) {
@@ -174,22 +165,22 @@ fn sized_types(global_ctx: &Context) {
     assert!(!fn_type3.is_sized());
     assert!(!fn_type4.is_sized());
 
-    assert!(bool_type.ptr_type(AddressSpace::Generic).is_sized());
-    assert!(i8_type.ptr_type(AddressSpace::Generic).is_sized());
-    assert!(i16_type.ptr_type(AddressSpace::Generic).is_sized());
-    assert!(i32_type.ptr_type(AddressSpace::Generic).is_sized());
-    assert!(i64_type.ptr_type(AddressSpace::Generic).is_sized());
-    assert!(i128_type.ptr_type(AddressSpace::Generic).is_sized());
-    assert!(f16_type.ptr_type(AddressSpace::Generic).is_sized());
-    assert!(f32_type.ptr_type(AddressSpace::Generic).is_sized());
-    assert!(f64_type.ptr_type(AddressSpace::Generic).is_sized());
-    assert!(f80_type.ptr_type(AddressSpace::Generic).is_sized());
-    assert!(f128_type.ptr_type(AddressSpace::Generic).is_sized());
-    assert!(ppc_f128_type.ptr_type(AddressSpace::Generic).is_sized());
-    assert!(struct_type.ptr_type(AddressSpace::Generic).is_sized());
-    assert!(struct_type2.ptr_type(AddressSpace::Generic).is_sized());
-    assert!(struct_type3.ptr_type(AddressSpace::Generic).is_sized());
-    assert!(struct_type4.ptr_type(AddressSpace::Generic).is_sized());
+    assert!(bool_type.ptr_type(AddressSpace::default()).is_sized());
+    assert!(i8_type.ptr_type(AddressSpace::default()).is_sized());
+    assert!(i16_type.ptr_type(AddressSpace::default()).is_sized());
+    assert!(i32_type.ptr_type(AddressSpace::default()).is_sized());
+    assert!(i64_type.ptr_type(AddressSpace::default()).is_sized());
+    assert!(i128_type.ptr_type(AddressSpace::default()).is_sized());
+    assert!(f16_type.ptr_type(AddressSpace::default()).is_sized());
+    assert!(f32_type.ptr_type(AddressSpace::default()).is_sized());
+    assert!(f64_type.ptr_type(AddressSpace::default()).is_sized());
+    assert!(f80_type.ptr_type(AddressSpace::default()).is_sized());
+    assert!(f128_type.ptr_type(AddressSpace::default()).is_sized());
+    assert!(ppc_f128_type.ptr_type(AddressSpace::default()).is_sized());
+    assert!(struct_type.ptr_type(AddressSpace::default()).is_sized());
+    assert!(struct_type2.ptr_type(AddressSpace::default()).is_sized());
+    assert!(struct_type3.ptr_type(AddressSpace::default()).is_sized());
+    assert!(struct_type4.ptr_type(AddressSpace::default()).is_sized());
 
     assert!(bool_type.array_type(42).is_sized());
     assert!(i8_type.array_type(42).is_sized());
@@ -224,7 +215,7 @@ fn sized_types(global_ctx: &Context) {
     let opaque_struct_type = global_ctx.opaque_struct_type("opaque");
 
     assert!(!opaque_struct_type.is_sized());
-    assert!(opaque_struct_type.ptr_type(AddressSpace::Generic).is_sized());
+    assert!(opaque_struct_type.ptr_type(AddressSpace::default()).is_sized());
     assert!(!opaque_struct_type.array_type(0).is_sized());
 }
 
@@ -244,7 +235,7 @@ fn test_const_zero() {
     let f128_type = context.f128_type();
     let ppc_f128_type = context.ppc_f128_type();
     let struct_type = context.struct_type(&[i8_type.into(), f128_type.into()], false);
-    let ptr_type = f64_type.ptr_type(AddressSpace::Generic);
+    let ptr_type = f64_type.ptr_type(AddressSpace::default());
     let vec_type = f64_type.vec_type(42);
     let array_type = f64_type.array_type(42);
 
@@ -305,13 +296,37 @@ fn test_const_zero() {
     assert_eq!(f16_zero.print_to_string().to_str(), Ok("half 0xH0000"));
     assert_eq!(f32_zero.print_to_string().to_str(), Ok("float 0.000000e+00"));
     assert_eq!(f64_zero.print_to_string().to_str(), Ok("double 0.000000e+00"));
-    assert_eq!(f80_zero.print_to_string().to_str(), Ok("x86_fp80 0xK00000000000000000000"));
-    assert_eq!(f128_zero.print_to_string().to_str(), Ok("fp128 0xL00000000000000000000000000000000"));
-    assert_eq!(ppc_f128_zero.print_to_string().to_str(), Ok("ppc_fp128 0xM00000000000000000000000000000000"));
-    assert_eq!(struct_zero.print_to_string().to_str(), Ok("{ i8, fp128 } zeroinitializer"));
-    assert_eq!(ptr_zero.print_to_string().to_str(), Ok("double* null"));
+    assert_eq!(
+        f80_zero.print_to_string().to_str(),
+        Ok("x86_fp80 0xK00000000000000000000")
+    );
+    assert_eq!(
+        f128_zero.print_to_string().to_str(),
+        Ok("fp128 0xL00000000000000000000000000000000")
+    );
+    assert_eq!(
+        ppc_f128_zero.print_to_string().to_str(),
+        Ok("ppc_fp128 0xM00000000000000000000000000000000")
+    );
+    assert_eq!(
+        struct_zero.print_to_string().to_str(),
+        Ok("{ i8, fp128 } zeroinitializer")
+    );
+
+    // handle opaque pointers
+    let ptr_type = if cfg!(any(feature = "llvm15-0", feature = "llvm16-0")) {
+        "ptr null"
+    } else {
+        "double* null"
+    };
+
+    assert_eq!(ptr_zero.print_to_string().to_str(), Ok(ptr_type));
+
     assert_eq!(vec_zero.print_to_string().to_str(), Ok("<42 x double> zeroinitializer"));
-    assert_eq!(array_zero.print_to_string().to_str(), Ok("[42 x double] zeroinitializer"));
+    assert_eq!(
+        array_zero.print_to_string().to_str(),
+        Ok("[42 x double] zeroinitializer")
+    );
 }
 
 #[test]
@@ -336,40 +351,72 @@ fn test_type_copies() {
 fn test_ptr_type() {
     let context = Context::create();
     let i8_type = context.i8_type();
-    let ptr_type = i8_type.ptr_type(AddressSpace::Generic);
+    let ptr_type = i8_type.ptr_type(AddressSpace::default());
 
-    assert_eq!(ptr_type.get_address_space(), AddressSpace::Generic);
+    assert_eq!(ptr_type.get_address_space(), AddressSpace::default());
+
+    #[cfg(any(
+        feature = "llvm4-0",
+        feature = "llvm5-0",
+        feature = "llvm6-0",
+        feature = "llvm7-0",
+        feature = "llvm8-0",
+        feature = "llvm9-0",
+        feature = "llvm10-0",
+        feature = "llvm11-0",
+        feature = "llvm12-0",
+        feature = "llvm13-0",
+        feature = "llvm14-0"
+    ))]
     assert_eq!(ptr_type.get_element_type().into_int_type(), i8_type);
 
     // Fn ptr:
     let void_type = context.void_type();
     let fn_type = void_type.fn_type(&[], false);
-    let fn_ptr_type = fn_type.ptr_type(AddressSpace::Generic);
+    let fn_ptr_type = fn_type.ptr_type(AddressSpace::default());
 
+    #[cfg(any(
+        feature = "llvm4-0",
+        feature = "llvm5-0",
+        feature = "llvm6-0",
+        feature = "llvm7-0",
+        feature = "llvm8-0",
+        feature = "llvm9-0",
+        feature = "llvm10-0",
+        feature = "llvm11-0",
+        feature = "llvm12-0",
+        feature = "llvm13-0",
+        feature = "llvm14-0"
+    ))]
     assert_eq!(fn_ptr_type.get_element_type().into_function_type(), fn_type);
-    assert_eq!(*fn_ptr_type.get_context(), context);
+
+    assert_eq!(fn_ptr_type.get_context(), context);
 }
 
 #[test]
 fn test_basic_type_enum() {
     let context = Context::create();
-    let addr = AddressSpace::Generic;
+    let addr = AddressSpace::default();
     let int = context.i32_type();
     let types: &[&dyn BasicType] = &[
         // ints and floats
-        &int, &context.i64_type(), &context.f32_type(), &context.f64_type(),
+        &int,
+        &context.i64_type(),
+        &context.f32_type(),
+        &context.f64_type(),
         // derived types
-        &int.array_type(0), &int.ptr_type(addr),
+        &int.array_type(0),
+        &int.ptr_type(addr),
         &context.struct_type(&[int.as_basic_type_enum()], false),
-        &int.vec_type(1)
+        &int.vec_type(1),
     ];
     for basic_type in types {
-        assert_eq!(basic_type.as_basic_type_enum().ptr_type(addr),
-                   basic_type.ptr_type(addr));
-        assert_eq!(basic_type.as_basic_type_enum().array_type(0),
-                   basic_type.array_type(0));
-        assert_eq!(basic_type.as_basic_type_enum().size_of(),
-                   basic_type.size_of());
+        assert_eq!(
+            basic_type.as_basic_type_enum().ptr_type(addr),
+            basic_type.ptr_type(addr)
+        );
+        assert_eq!(basic_type.as_basic_type_enum().array_type(0), basic_type.array_type(0));
+        assert_eq!(basic_type.as_basic_type_enum().size_of(), basic_type.size_of());
     }
 }
 
@@ -379,4 +426,20 @@ fn test_no_vector_zero() {
     let context = Context::create();
     let int = context.i32_type();
     int.vec_type(0);
+}
+
+#[test]
+fn test_ptr_address_space() {
+    let context = Context::create();
+
+    let spaces = [0u32, 1, 2, 3, 4, 5, 6, 1 << 24 - 1];
+
+    for index in spaces {
+        let address_space = AddressSpace::try_from(index).unwrap();
+
+        let ptr = context.i32_type().ptr_type(address_space);
+        assert_eq!(ptr.get_address_space(), address_space);
+    }
+
+    assert!(AddressSpace::try_from(1u32 << 24).is_err());
 }

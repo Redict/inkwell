@@ -1,11 +1,14 @@
-use llvm_sys::core::{LLVMConstVector, LLVMGetVectorSize, LLVMConstArray};
+use llvm_sys::core::{LLVMConstArray, LLVMConstVector, LLVMGetVectorSize};
 use llvm_sys::prelude::{LLVMTypeRef, LLVMValueRef};
 
-use crate::AddressSpace;
 use crate::context::ContextRef;
-use crate::types::{ArrayType, BasicTypeEnum, Type, traits::AsTypeRef, FunctionType, PointerType};
-use crate::values::{AsValueRef, ArrayValue, BasicValue, VectorValue, IntValue};
+use crate::support::LLVMString;
 use crate::types::enums::BasicMetadataTypeEnum;
+use crate::types::{traits::AsTypeRef, ArrayType, BasicTypeEnum, FunctionType, PointerType, Type};
+use crate::values::{ArrayValue, AsValueRef, BasicValue, IntValue, VectorValue};
+use crate::AddressSpace;
+
+use std::fmt::{self, Display};
 
 /// A `VectorType` is the type of a multiple value SIMD constant or variable.
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
@@ -14,7 +17,11 @@ pub struct VectorType<'ctx> {
 }
 
 impl<'ctx> VectorType<'ctx> {
-    pub(crate) unsafe fn new(vector_type: LLVMTypeRef) -> Self {
+    /// Create `VectorType` from [`LLVMTypeRef`]
+    ///
+    /// # Safety
+    /// Undefined behavior, if referenced type isn't vector type
+    pub unsafe fn new(vector_type: LLVMTypeRef) -> Self {
         assert!(!vector_type.is_null());
 
         VectorType {
@@ -72,9 +79,7 @@ impl<'ctx> VectorType<'ctx> {
     /// assert_eq!(f32_vector_type.get_element_type().into_float_type(), f32_type);
     /// ```
     pub fn get_size(self) -> u32 {
-        unsafe {
-            LLVMGetVectorSize(self.as_type_ref())
-        }
+        unsafe { LLVMGetVectorSize(self.as_type_ref()) }
     }
 
     // REVIEW:
@@ -101,12 +106,8 @@ impl<'ctx> VectorType<'ctx> {
     /// assert!(f32_vec_val.is_constant_vector());
     /// ```
     pub fn const_vector<V: BasicValue<'ctx>>(values: &[V]) -> VectorValue<'ctx> {
-        let mut values: Vec<LLVMValueRef> = values.iter()
-                                                  .map(|val| val.as_value_ref())
-                                                  .collect();
-        unsafe {
-            VectorValue::new(LLVMConstVector(values.as_mut_ptr(), values.len() as u32))
-        }
+        let mut values: Vec<LLVMValueRef> = values.iter().map(|val| val.as_value_ref()).collect();
+        unsafe { VectorValue::new(LLVMConstVector(values.as_mut_ptr(), values.len() as u32)) }
     }
 
     /// Creates a constant zero value of this `VectorType`.
@@ -122,16 +123,12 @@ impl<'ctx> VectorType<'ctx> {
     /// let f32_vec_zero = f32_vec_type.const_zero();
     /// ```
     pub fn const_zero(self) -> VectorValue<'ctx> {
-        unsafe {
-            VectorValue::new(self.vec_type.const_zero())
-        }
+        unsafe { VectorValue::new(self.vec_type.const_zero()) }
     }
 
-    // See Type::print_to_stderr note on 5.0+ status
-    /// Prints the definition of an `IntType` to stderr. Not available in newer LLVM versions.
-    #[llvm_versions(3.7..=4.0)]
-    pub fn print_to_stderr(self) {
-        self.vec_type.print_to_stderr()
+    /// Print the definition of a `VectorType` to `LLVMString`.
+    pub fn print_to_string(self) -> LLVMString {
+        self.vec_type.print_to_string()
     }
 
     /// Creates an undefined instance of a `VectorType`.
@@ -149,9 +146,7 @@ impl<'ctx> VectorType<'ctx> {
     /// assert!(f32_vec_undef.is_undef());
     /// ```
     pub fn get_undef(self) -> VectorValue<'ctx> {
-        unsafe {
-            VectorValue::new(self.vec_type.get_undef())
-        }
+        unsafe { VectorValue::new(self.vec_type.get_undef()) }
     }
 
     // SubType: VectorType<BT> -> BT?
@@ -171,7 +166,6 @@ impl<'ctx> VectorType<'ctx> {
     /// ```
     pub fn get_element_type(self) -> BasicTypeEnum<'ctx> {
         self.vec_type.get_element_type().to_basic_type_enum()
-
     }
 
     /// Creates a `PointerType` with this `VectorType` for its element type.
@@ -185,8 +179,21 @@ impl<'ctx> VectorType<'ctx> {
     /// let context = Context::create();
     /// let f32_type = context.f32_type();
     /// let f32_vec_type = f32_type.vec_type(3);
-    /// let f32_vec_ptr_type = f32_vec_type.ptr_type(AddressSpace::Generic);
+    /// let f32_vec_ptr_type = f32_vec_type.ptr_type(AddressSpace::default());
     ///
+    /// #[cfg(any(
+    ///     feature = "llvm4-0",
+    ///     feature = "llvm5-0",
+    ///     feature = "llvm6-0",
+    ///     feature = "llvm7-0",
+    ///     feature = "llvm8-0",
+    ///     feature = "llvm9-0",
+    ///     feature = "llvm10-0",
+    ///     feature = "llvm11-0",
+    ///     feature = "llvm12-0",
+    ///     feature = "llvm13-0",
+    ///     feature = "llvm14-0"
+    /// ))]
     /// assert_eq!(f32_vec_ptr_type.get_element_type().into_vector_type(), f32_vec_type);
     /// ```
     pub fn ptr_type(self, address_space: AddressSpace) -> PointerType<'ctx> {
@@ -246,12 +253,14 @@ impl<'ctx> VectorType<'ctx> {
     /// assert!(f32_array.is_const());
     /// ```
     pub fn const_array(self, values: &[VectorValue<'ctx>]) -> ArrayValue<'ctx> {
-        let mut values: Vec<LLVMValueRef> = values.iter()
-                                                  .map(|val| val.as_value_ref())
-                                                  .collect();
+        let mut values: Vec<LLVMValueRef> = values.iter().map(|val| val.as_value_ref()).collect();
 
         unsafe {
-            ArrayValue::new(LLVMConstArray(self.as_type_ref(), values.as_mut_ptr(), values.len() as u32))
+            ArrayValue::new(LLVMConstArray(
+                self.as_type_ref(),
+                values.as_mut_ptr(),
+                values.len() as u32,
+            ))
         }
     }
 
@@ -266,15 +275,21 @@ impl<'ctx> VectorType<'ctx> {
     /// let f32_type = context.f32_type();
     /// let f32_vec_type = f32_type.vec_type(7);
     ///
-    /// assert_eq!(*f32_vec_type.get_context(), context);
+    /// assert_eq!(f32_vec_type.get_context(), context);
     /// ```
     pub fn get_context(self) -> ContextRef<'ctx> {
         self.vec_type.get_context()
     }
 }
 
-impl AsTypeRef for VectorType<'_> {
+unsafe impl AsTypeRef for VectorType<'_> {
     fn as_type_ref(&self) -> LLVMTypeRef {
         self.vec_type.ty
+    }
+}
+
+impl Display for VectorType<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.print_to_string())
     }
 }

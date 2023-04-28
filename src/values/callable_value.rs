@@ -1,11 +1,14 @@
-use std::convert::TryFrom;
 use either::Either;
+use std::convert::TryFrom;
+use std::fmt::{self, Display};
 
+use crate::types::AsTypeRef;
 use crate::values::AsValueRef;
-use crate::values::{FunctionValue, PointerValue, AnyValue};
+use crate::values::{AnyValue, FunctionValue, PointerValue};
 
+use llvm_sys::core::{LLVMGetElementType, LLVMGetTypeKind, LLVMTypeOf};
+use llvm_sys::prelude::LLVMTypeRef;
 use llvm_sys::prelude::LLVMValueRef;
-use llvm_sys::core::{LLVMGetTypeKind, LLVMGetElementType, LLVMTypeOf, LLVMGetReturnType};
 use llvm_sys::LLVMTypeKind;
 
 /// A value that can be called with the [`build_call`] instruction.
@@ -76,7 +79,7 @@ use llvm_sys::LLVMTypeKind;
 #[derive(Debug)]
 pub struct CallableValue<'ctx>(Either<FunctionValue<'ctx>, PointerValue<'ctx>>);
 
-impl<'ctx> AsValueRef for CallableValue<'ctx> {
+unsafe impl<'ctx> AsValueRef for CallableValue<'ctx> {
     fn as_value_ref(&self) -> LLVMValueRef {
         use either::Either::*;
 
@@ -87,13 +90,26 @@ impl<'ctx> AsValueRef for CallableValue<'ctx> {
     }
 }
 
-impl<'ctx> AnyValue<'ctx> for CallableValue<'ctx> {}
+unsafe impl<'ctx> AnyValue<'ctx> for CallableValue<'ctx> {}
+
+unsafe impl<'ctx> AsTypeRef for CallableValue<'ctx> {
+    fn as_type_ref(&self) -> LLVMTypeRef {
+        use either::Either::*;
+
+        match self.0 {
+            Left(function) => function.get_type().as_type_ref(),
+            Right(pointer) => pointer.get_type().get_element_type().as_type_ref(),
+        }
+    }
+}
 
 impl<'ctx> CallableValue<'ctx> {
+    #[llvm_versions(4.0..=14.0)]
     pub(crate) fn returns_void(&self) -> bool {
-        let return_type = unsafe {
-            LLVMGetTypeKind(LLVMGetReturnType(LLVMGetElementType(LLVMTypeOf(self.as_value_ref()))))
-        };
+        use llvm_sys::core::LLVMGetReturnType;
+
+        let return_type =
+            unsafe { LLVMGetTypeKind(LLVMGetReturnType(LLVMGetElementType(LLVMTypeOf(self.as_value_ref())))) };
 
         matches!(return_type, LLVMTypeKind::LLVMVoidTypeKind)
     }
@@ -119,5 +135,11 @@ impl<'ctx> TryFrom<PointerValue<'ctx>> for CallableValue<'ctx> {
         } else {
             Err(())
         }
+    }
+}
+
+impl Display for CallableValue<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.print_to_string())
     }
 }

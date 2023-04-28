@@ -1,12 +1,18 @@
-use llvm_sys::core::{LLVMIsAInstruction, LLVMTypeOf, LLVMGetTypeKind};
-use llvm_sys::LLVMTypeKind;
+use llvm_sys::core::{LLVMGetTypeKind, LLVMGetValueKind, LLVMIsAInstruction, LLVMTypeOf};
 use llvm_sys::prelude::LLVMValueRef;
+use llvm_sys::{LLVMTypeKind, LLVMValueKind};
 
 use crate::types::{AnyTypeEnum, BasicTypeEnum};
 use crate::values::traits::AsValueRef;
-use crate::values::{IntValue, FunctionValue, PointerValue, VectorValue, ArrayValue, StructValue, FloatValue, PhiValue, InstructionValue, MetadataValue};
+use crate::values::{
+    ArrayValue, FloatValue, FunctionValue, InstructionValue, IntValue, MetadataValue, PhiValue, PointerValue,
+    StructValue, VectorValue,
+};
 
 use std::convert::TryFrom;
+use std::fmt::{self, Display};
+
+use super::AnyValue;
 
 macro_rules! enum_value_set {
     ($enum_name:ident: $($args:ident),*) => (
@@ -17,7 +23,7 @@ macro_rules! enum_value_set {
             )*
         }
 
-        impl AsValueRef for $enum_name<'_> {
+        unsafe impl AsValueRef for $enum_name<'_> {
             fn as_value_ref(&self) -> LLVMValueRef {
                 match *self {
                     $(
@@ -61,22 +67,25 @@ macro_rules! enum_value_set {
 }
 
 enum_value_set! {AggregateValueEnum: ArrayValue, StructValue}
-enum_value_set! {AnyValueEnum: ArrayValue, IntValue, FloatValue, PhiValue, FunctionValue, PointerValue, StructValue, VectorValue, InstructionValue}
+enum_value_set! {AnyValueEnum: ArrayValue, IntValue, FloatValue, PhiValue, FunctionValue, PointerValue, StructValue, VectorValue, InstructionValue, MetadataValue}
 enum_value_set! {BasicValueEnum: ArrayValue, IntValue, FloatValue, PointerValue, StructValue, VectorValue}
 enum_value_set! {BasicMetadataValueEnum: ArrayValue, IntValue, FloatValue, PointerValue, StructValue, VectorValue, MetadataValue}
 
 impl<'ctx> AnyValueEnum<'ctx> {
     pub(crate) unsafe fn new(value: LLVMValueRef) -> Self {
         match LLVMGetTypeKind(LLVMTypeOf(value)) {
-            LLVMTypeKind::LLVMFloatTypeKind |
-            LLVMTypeKind::LLVMFP128TypeKind |
-            LLVMTypeKind::LLVMDoubleTypeKind |
-            LLVMTypeKind::LLVMHalfTypeKind |
-            LLVMTypeKind::LLVMX86_FP80TypeKind |
-            LLVMTypeKind::LLVMPPC_FP128TypeKind => AnyValueEnum::FloatValue(FloatValue::new(value)),
+            LLVMTypeKind::LLVMFloatTypeKind
+            | LLVMTypeKind::LLVMFP128TypeKind
+            | LLVMTypeKind::LLVMDoubleTypeKind
+            | LLVMTypeKind::LLVMHalfTypeKind
+            | LLVMTypeKind::LLVMX86_FP80TypeKind
+            | LLVMTypeKind::LLVMPPC_FP128TypeKind => AnyValueEnum::FloatValue(FloatValue::new(value)),
             LLVMTypeKind::LLVMIntegerTypeKind => AnyValueEnum::IntValue(IntValue::new(value)),
             LLVMTypeKind::LLVMStructTypeKind => AnyValueEnum::StructValue(StructValue::new(value)),
-            LLVMTypeKind::LLVMPointerTypeKind => AnyValueEnum::PointerValue(PointerValue::new(value)),
+            LLVMTypeKind::LLVMPointerTypeKind => match LLVMGetValueKind(value) {
+                LLVMValueKind::LLVMFunctionValueKind => AnyValueEnum::FunctionValue(FunctionValue::new(value).unwrap()),
+                _ => AnyValueEnum::PointerValue(PointerValue::new(value)),
+            },
             LLVMTypeKind::LLVMArrayTypeKind => AnyValueEnum::ArrayValue(ArrayValue::new(value)),
             LLVMTypeKind::LLVMVectorTypeKind => AnyValueEnum::VectorValue(VectorValue::new(value)),
             LLVMTypeKind::LLVMFunctionTypeKind => AnyValueEnum::FunctionValue(FunctionValue::new(value).unwrap()),
@@ -87,14 +96,12 @@ impl<'ctx> AnyValueEnum<'ctx> {
                 AnyValueEnum::InstructionValue(InstructionValue::new(value))
             },
             LLVMTypeKind::LLVMMetadataTypeKind => panic!("Metadata values are not supported as AnyValue's."),
-            _ => panic!("The given type is not supported.")
+            _ => panic!("The given type is not supported."),
         }
     }
 
     pub fn get_type(&self) -> AnyTypeEnum<'ctx> {
-        unsafe {
-            AnyTypeEnum::new(LLVMTypeOf(self.as_value_ref()))
-        }
+        unsafe { AnyTypeEnum::new(LLVMTypeOf(self.as_value_ref())) }
     }
 
     pub fn is_array_value(self) -> bool {
@@ -209,12 +216,12 @@ impl<'ctx> AnyValueEnum<'ctx> {
 impl<'ctx> BasicValueEnum<'ctx> {
     pub(crate) unsafe fn new(value: LLVMValueRef) -> Self {
         match LLVMGetTypeKind(LLVMTypeOf(value)) {
-            LLVMTypeKind::LLVMFloatTypeKind |
-            LLVMTypeKind::LLVMFP128TypeKind |
-            LLVMTypeKind::LLVMDoubleTypeKind |
-            LLVMTypeKind::LLVMHalfTypeKind |
-            LLVMTypeKind::LLVMX86_FP80TypeKind |
-            LLVMTypeKind::LLVMPPC_FP128TypeKind => BasicValueEnum::FloatValue(FloatValue::new(value)),
+            LLVMTypeKind::LLVMFloatTypeKind
+            | LLVMTypeKind::LLVMFP128TypeKind
+            | LLVMTypeKind::LLVMDoubleTypeKind
+            | LLVMTypeKind::LLVMHalfTypeKind
+            | LLVMTypeKind::LLVMX86_FP80TypeKind
+            | LLVMTypeKind::LLVMPPC_FP128TypeKind => BasicValueEnum::FloatValue(FloatValue::new(value)),
             LLVMTypeKind::LLVMIntegerTypeKind => BasicValueEnum::IntValue(IntValue::new(value)),
             LLVMTypeKind::LLVMStructTypeKind => BasicValueEnum::StructValue(StructValue::new(value)),
             LLVMTypeKind::LLVMPointerTypeKind => BasicValueEnum::PointerValue(PointerValue::new(value)),
@@ -224,10 +231,20 @@ impl<'ctx> BasicValueEnum<'ctx> {
         }
     }
 
-    pub fn get_type(&self) -> BasicTypeEnum<'ctx> {
-        unsafe {
-            BasicTypeEnum::new(LLVMTypeOf(self.as_value_ref()))
+    /// Set name of the `BasicValueEnum`.
+    pub fn set_name(&self, name: &str) {
+        match self {
+            BasicValueEnum::ArrayValue(v) => v.set_name(name),
+            BasicValueEnum::IntValue(v) => v.set_name(name),
+            BasicValueEnum::FloatValue(v) => v.set_name(name),
+            BasicValueEnum::PointerValue(v) => v.set_name(name),
+            BasicValueEnum::StructValue(v) => v.set_name(name),
+            BasicValueEnum::VectorValue(v) => v.set_name(name),
         }
+    }
+
+    pub fn get_type(&self) -> BasicTypeEnum<'ctx> {
+        unsafe { BasicTypeEnum::new(LLVMTypeOf(self.as_value_ref())) }
     }
 
     pub fn is_array_value(self) -> bool {
@@ -340,12 +357,12 @@ impl<'ctx> AggregateValueEnum<'ctx> {
 impl<'ctx> BasicMetadataValueEnum<'ctx> {
     pub(crate) unsafe fn new(value: LLVMValueRef) -> Self {
         match LLVMGetTypeKind(LLVMTypeOf(value)) {
-            LLVMTypeKind::LLVMFloatTypeKind |
-            LLVMTypeKind::LLVMFP128TypeKind |
-            LLVMTypeKind::LLVMDoubleTypeKind |
-            LLVMTypeKind::LLVMHalfTypeKind |
-            LLVMTypeKind::LLVMX86_FP80TypeKind |
-            LLVMTypeKind::LLVMPPC_FP128TypeKind => BasicMetadataValueEnum::FloatValue(FloatValue::new(value)),
+            LLVMTypeKind::LLVMFloatTypeKind
+            | LLVMTypeKind::LLVMFP128TypeKind
+            | LLVMTypeKind::LLVMDoubleTypeKind
+            | LLVMTypeKind::LLVMHalfTypeKind
+            | LLVMTypeKind::LLVMX86_FP80TypeKind
+            | LLVMTypeKind::LLVMPPC_FP128TypeKind => BasicMetadataValueEnum::FloatValue(FloatValue::new(value)),
             LLVMTypeKind::LLVMIntegerTypeKind => BasicMetadataValueEnum::IntValue(IntValue::new(value)),
             LLVMTypeKind::LLVMStructTypeKind => BasicMetadataValueEnum::StructValue(StructValue::new(value)),
             LLVMTypeKind::LLVMPointerTypeKind => BasicMetadataValueEnum::PointerValue(PointerValue::new(value)),
@@ -443,17 +460,13 @@ impl<'ctx> BasicMetadataValueEnum<'ctx> {
 
 impl<'ctx> From<BasicValueEnum<'ctx>> for AnyValueEnum<'ctx> {
     fn from(value: BasicValueEnum<'ctx>) -> Self {
-        unsafe {
-            AnyValueEnum::new(value.as_value_ref())
-        }
+        unsafe { AnyValueEnum::new(value.as_value_ref()) }
     }
 }
 
 impl<'ctx> From<BasicValueEnum<'ctx>> for BasicMetadataValueEnum<'ctx> {
     fn from(value: BasicValueEnum<'ctx>) -> Self {
-        unsafe {
-            BasicMetadataValueEnum::new(value.as_value_ref())
-        }
+        unsafe { BasicMetadataValueEnum::new(value.as_value_ref()) }
     }
 }
 
@@ -461,14 +474,74 @@ impl<'ctx> TryFrom<AnyValueEnum<'ctx>> for BasicValueEnum<'ctx> {
     type Error = ();
 
     fn try_from(value: AnyValueEnum<'ctx>) -> Result<Self, Self::Error> {
+        use AnyValueEnum::*;
         Ok(match value {
-            AnyValueEnum::ArrayValue(av) => av.into(),
-            AnyValueEnum::IntValue(iv) => iv.into(),
-            AnyValueEnum::FloatValue(fv) => fv.into(),
-            AnyValueEnum::PointerValue(pv) => pv.into(),
-            AnyValueEnum::StructValue(sv) => sv.into(),
-            AnyValueEnum::VectorValue(vv) => vv.into(),
-            _ => return Err(()),
+            ArrayValue(av) => av.into(),
+            IntValue(iv) => iv.into(),
+            FloatValue(fv) => fv.into(),
+            PointerValue(pv) => pv.into(),
+            StructValue(sv) => sv.into(),
+            VectorValue(vv) => vv.into(),
+            MetadataValue(_) | PhiValue(_) | FunctionValue(_) | InstructionValue(_) => return Err(()),
         })
+    }
+}
+
+impl<'ctx> TryFrom<AnyValueEnum<'ctx>> for BasicMetadataValueEnum<'ctx> {
+    type Error = ();
+
+    fn try_from(value: AnyValueEnum<'ctx>) -> Result<Self, Self::Error> {
+        use AnyValueEnum::*;
+        Ok(match value {
+            ArrayValue(av) => av.into(),
+            IntValue(iv) => iv.into(),
+            FloatValue(fv) => fv.into(),
+            PointerValue(pv) => pv.into(),
+            StructValue(sv) => sv.into(),
+            VectorValue(vv) => vv.into(),
+            MetadataValue(mv) => mv.into(),
+            PhiValue(_) | FunctionValue(_) | InstructionValue(_) => return Err(()),
+        })
+    }
+}
+
+impl<'ctx> TryFrom<BasicMetadataValueEnum<'ctx>> for BasicValueEnum<'ctx> {
+    type Error = ();
+
+    fn try_from(value: BasicMetadataValueEnum<'ctx>) -> Result<Self, Self::Error> {
+        use BasicMetadataValueEnum::*;
+        Ok(match value {
+            ArrayValue(av) => av.into(),
+            IntValue(iv) => iv.into(),
+            FloatValue(fv) => fv.into(),
+            PointerValue(pv) => pv.into(),
+            StructValue(sv) => sv.into(),
+            VectorValue(vv) => vv.into(),
+            MetadataValue(_) => return Err(()),
+        })
+    }
+}
+
+impl Display for AggregateValueEnum<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.print_to_string())
+    }
+}
+
+impl Display for AnyValueEnum<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.print_to_string())
+    }
+}
+
+impl Display for BasicValueEnum<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.print_to_string())
+    }
+}
+
+impl Display for BasicMetadataValueEnum<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.print_to_string())
     }
 }
